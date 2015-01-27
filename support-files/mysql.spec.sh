@@ -238,8 +238,8 @@ Group:          Applications/Databases
 # Distro requirements
 # RedHat
 %if 0%{?fedora} || 0%{?rhel}
-Requires:       ckconfig coreutils grep procps shadow-utils net-tools rsync lsof
-%if 0%{?rhel} == 7
+Requires:       chkconfig coreutils grep procps shadow-utils net-tools rsync lsof
+%if 0%{?rhel} == 7 || 0%{?fedora} >= 20
 Requires: perl-Data-Dumper
 %endif
 %endif
