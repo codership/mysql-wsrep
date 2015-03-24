@@ -184,6 +184,6 @@ void wsrep_set_SE_checkpoint(const wsrep_uuid_t& uuid,
   }
   else
   {
-    assert(seqno == current_seqno)
+    assert(seqno == current_seqno);
   }
 }
