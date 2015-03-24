@@ -255,21 +255,8 @@ void wsrep_sst_received (wsrep_t*            const wsrep,
         *uuid, (rcode ? WSREP_SEQNO_UNDEFINED : seqno)
     };
 
-    wsrep_uuid_t current_uuid;
-    wsrep_seqno_t current_seqno;
-    wsrep_get_SE_checkpoint(current_uuid, current_seqno);
-
-    if (memcmp(&current_uuid, &state_id.uuid, sizeof(wsrep_uuid_t)) ||
-        current_seqno < state_id.seqno)
-    {
-        wsrep_set_SE_checkpoint(state_id.uuid, state_id.seqno);
-        wsrep_init_sidno(state_id.uuid);
-    }
-    else
-    {
-        // we should not be receiving SSTs in the past...
-        assert(current_seqno == state_id.seqno);
-    }
+    wsrep_set_SE_checkpoint(state_id.uuid, state_id.seqno);
+    wsrep_init_sidno(state_id.uuid);
 
     wsrep->sst_received(wsrep, &state_id, state, state_len, rcode);
 }

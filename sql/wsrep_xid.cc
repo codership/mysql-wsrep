@@ -74,34 +74,22 @@ wsrep_seqno_t wsrep_xid_seqno(const XID& xid)
   }
 }
 
-static my_bool set_SE_checkpoint(THD* unused, plugin_ref plugin, void* arg)
+void wsrep_init_sidno(const wsrep_uuid_t& wsrep_uuid)
 {
-  XID* xid= static_cast<XID*>(arg);
-  handlerton* hton= plugin_data(plugin, handlerton *);
+  /* generate new Sid map entry from inverted uuid */
+  rpl_sid sid;
+  wsrep_uuid_t ltid_uuid;
 
-  if (hton->db_type == DB_TYPE_INNODB)
+  for (size_t i= 0; i < sizeof(ltid_uuid.data); ++i)
   {
-    const wsrep_uuid_t* uuid(wsrep_xid_uuid(*xid));
-    char uuid_str[40] = {0, };
-    wsrep_uuid_print(uuid, uuid_str, sizeof(uuid_str));
-    WSREP_DEBUG("Set WSREPXid for InnoDB:  %s:%lld",
-                uuid_str, (long long)wsrep_xid_seqno(*xid));
-    hton->wsrep_set_checkpoint(hton, xid);
+      ltid_uuid.data[i] = ~wsrep_uuid.data[i];
   }
 
-  return FALSE;
-}
-
-void wsrep_set_SE_checkpoint(XID& xid)
-{
-  plugin_foreach(NULL, set_SE_checkpoint, MYSQL_STORAGE_ENGINE_PLUGIN, &xid);
-}
-
-void wsrep_set_SE_checkpoint(const wsrep_uuid_t& uuid, wsrep_seqno_t seqno)
-{
-  XID xid;
-  wsrep_xid_init(&xid, uuid, seqno);
-  wsrep_set_SE_checkpoint(xid);
+  sid.copy_from(ltid_uuid.data);
+  global_sid_lock->wrlock();
+  wsrep_sidno= global_sid_map->add_sid(sid);
+  WSREP_INFO("Initialized wsrep sidno %d", wsrep_sidno);
+  global_sid_lock->unlock();
 }
 
 static my_bool get_SE_checkpoint(THD* unused, plugin_ref plugin, void* arg)
@@ -150,20 +138,52 @@ void wsrep_get_SE_checkpoint(wsrep_uuid_t& uuid, wsrep_seqno_t& seqno)
   seqno= wsrep_xid_seqno(xid);
 }
 
-void wsrep_init_sidno(const wsrep_uuid_t& wsrep_uuid)
+static my_bool set_SE_checkpoint(THD* unused, plugin_ref plugin, void* arg)
 {
-  /* generate new Sid map entry from inverted uuid */
-  rpl_sid sid;
-  wsrep_uuid_t ltid_uuid;
+  XID* xid= static_cast<XID*>(arg);
+  handlerton* hton= plugin_data(plugin, handlerton *);
 
-  for (size_t i= 0; i < sizeof(ltid_uuid.data); ++i)
+  if (hton->db_type == DB_TYPE_INNODB)
   {
-      ltid_uuid.data[i] = ~wsrep_uuid.data[i];
+    const wsrep_uuid_t* uuid(wsrep_xid_uuid(*xid));
+    char uuid_str[40] = {0, };
+    wsrep_uuid_print(uuid, uuid_str, sizeof(uuid_str));
+    WSREP_DEBUG("Set WSREPXid for InnoDB:  %s:%lld",
+                uuid_str, (long long)wsrep_xid_seqno(*xid));
+    hton->wsrep_set_checkpoint(hton, xid);
   }
 
-  sid.copy_from(ltid_uuid.data);
-  global_sid_lock->wrlock();
-  wsrep_sidno= global_sid_map->add_sid(sid);
-  WSREP_INFO("Initialized wsrep sidno %d", wsrep_sidno);
-  global_sid_lock->unlock();
+  return FALSE;
+}
+
+void wsrep_set_SE_checkpoint(XID& xid)
+{
+  plugin_foreach(NULL, set_SE_checkpoint, MYSQL_STORAGE_ENGINE_PLUGIN, &xid);
+}
+
+void wsrep_set_SE_checkpoint(const wsrep_uuid_t& uuid,
+                             wsrep_seqno_t const seqno)
+{
+  wsrep_uuid_t current_uuid;
+  wsrep_seqno_t current_seqno;
+  wsrep_get_SE_checkpoint(current_uuid, current_seqno);
+
+  bool const same_uuid= !memcmp(&current_uuid, &uuid, sizeof(wsrep_uuid_t));
+
+  if (!same_uuid || current_seqno < seqno || seqno < 0)
+  {
+    XID xid;
+    wsrep_xid_init(&xid, uuid, seqno);
+    wsrep_set_SE_checkpoint(xid);
+  }
+  else if (current_seqno > seqno)
+  {
+    WSREP_ERROR("Attempt to set SE checkpoint in the past: %lld, current: "
+                "%lld", (long long)seqno, (long long)current_seqno);
+    unireg_abort(1);
+  }
+  else
+  {
+    assert(seqno == current_seqno)
+  }
 }
