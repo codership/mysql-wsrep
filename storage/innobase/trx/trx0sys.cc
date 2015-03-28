@@ -317,22 +317,11 @@ trx_sys_print_mysql_binlog_offset(void)
 
 #ifdef WITH_WSREP
 
+#include <wsrep_xid.h>
 #ifdef UNIV_DEBUG
 static long long trx_sys_cur_xid_seqno = -1;
 static unsigned char trx_sys_cur_xid_uuid[16];
-
-long long read_wsrep_xid_seqno(const XID* xid)
-{
-    long long seqno;
-    memcpy(&seqno, xid->data + 24, sizeof(long long));
-    return seqno;
-}
-
-void read_wsrep_xid_uuid(const XID* xid, unsigned char* buf)
-{
-    memcpy(buf, xid->data + 8, 16);
-}
-
+static size_t const xid_len = sizeof(trx_sys_cur_xid_uuid);
 #endif /* UNIV_DEBUG */
 
 void
@@ -345,17 +334,17 @@ trx_sys_update_wsrep_checkpoint(
 #ifdef UNIV_DEBUG
         {
             /* Check that seqno is monotonically increasing */
-            unsigned char xid_uuid[16];
-            long long xid_seqno = read_wsrep_xid_seqno(xid);
-            read_wsrep_xid_uuid(xid, xid_uuid);
-            if (!memcmp(xid_uuid, trx_sys_cur_xid_uuid, 8))
+            const wsrep_uuid_t* const xid_uuid = wsrep_xid_uuid(*xid);
+            wsrep_seqno_t const xid_seqno = wsrep_xid_seqno(*xid);
+            if (!memcmp(xid_uuid, trx_sys_cur_xid_uuid, xid_len))
             {
-                ut_ad(xid_seqno > trx_sys_cur_xid_seqno);
+                ut_ad(xid_seqno > trx_sys_cur_xid_seqno ||
+                      trx_sys_cur_xid_seqno < 0);
                 trx_sys_cur_xid_seqno = xid_seqno;
             }
             else
             {
-                memcpy(trx_sys_cur_xid_uuid, xid_uuid, 16);
+                memcpy(trx_sys_cur_xid_uuid, xid_uuid, xid_len);
             }
             trx_sys_cur_xid_seqno = xid_seqno;
         }
@@ -409,8 +398,7 @@ trx_sys_read_wsrep_checkpoint(XID* xid)
         if ((magic = mach_read_from_4(sys_header + TRX_SYS_WSREP_XID_INFO
                                       + TRX_SYS_WSREP_XID_MAGIC_N_FLD))
             != TRX_SYS_WSREP_XID_MAGIC_N) {
-                memset(xid, 0, sizeof(*xid));
-                xid->formatID = -1;
+                wsrep_xid_init(*xid,WSREP_UUID_UNDEFINED,WSREP_SEQNO_UNDEFINED);
                 trx_sys_update_wsrep_checkpoint(xid, sys_header, &mtr);
                 mtr_commit(&mtr);
                 return;

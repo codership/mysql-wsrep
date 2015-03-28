@@ -17,12 +17,13 @@
 #define WSREP_XID_H
 
 #include "../wsrep/wsrep_api.h"
-#include "handler.h" // XID typedef
 
-void wsrep_xid_init(xid_t*, const wsrep_uuid_t&, wsrep_seqno_t);
+struct xid_t;
+
+void wsrep_xid_init(xid_t&, const wsrep_uuid_t&, wsrep_seqno_t);
 int wsrep_is_wsrep_xid(const void* xid);
-const wsrep_uuid_t* wsrep_xid_uuid(const XID&);
-wsrep_seqno_t wsrep_xid_seqno(const XID&);
+const wsrep_uuid_t* wsrep_xid_uuid(const xid_t&);
+wsrep_seqno_t wsrep_xid_seqno(const xid_t&);
 
 //void wsrep_get_SE_checkpoint(XID&); uncomment if needed
 void wsrep_get_SE_checkpoint(wsrep_uuid_t&, wsrep_seqno_t&);
