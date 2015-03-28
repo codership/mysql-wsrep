@@ -63,9 +63,10 @@ check_pid_and_port()
         grep -w '^rsync[[:space:]]\+'"$rsync_pid" 2>/dev/null)
 
     if [ -n "$port_info" -a -z "$is_rsync" ]; then
-        wsrep_log_error "rsync daemon port '$rsync_port' has been taken"
+        wsrep_log_error "rsync daemon port '$rsync_port' has been taken by: $port_info"
         exit 16 # EBUSY
     fi
+
     check_pid $pid_file && \
         [ -n "$port_info" ] && [ -n "$is_rsync" ] && \
         [ $(cat $pid_file) -eq $rsync_pid ]
