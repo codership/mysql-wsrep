@@ -39,30 +39,19 @@ wsrep_seqno_byteswap(wsrep_seqno_t const seqno)
  * for the general little-endian cause, canonical XID seqno representation
  * is little-endian. */
 #ifdef WORDS_BIGENDIAN
-  #define host_to_xid_seqno(s) wsrep_seqno_byteswap(s)
-  static inline wsrep_seqno_t
-  xid_to_host_seqno(wsrep_seqno_t const seqno)
-  {
-    // a little trick to simplify migration for existing installations:
-    // it is highly inlikely that the current seqno in any big-endian
-    // production cluster exceeds 0x0000000fffffffffLL (64G).
-    // Hence any seqno read from XID that is bigger than that must have been
-    // written in BE format. This BE detection has failure probability of
-    // 1 in 256M. This must be removed after next release.
-    wsrep_seqno_t const ret(wsrep_seqno_byteswap(seqno));
-    return (ret > 0x0000000fffffffffLL || ret < WSREP_SEQNO_UNDEFINED ?
-            seqno : ret);
-  }
+  #define HOST_TO_XID_SEQNO(s) wsrep_seqno_byteswap(s)
 #else
-  #define host_to_xid_seqno(s) (s)
-  #define xid_to_host_seqno(s) host_to_xid_seqno(s)
+  #define HOST_TO_XID_SEQNO(s) (s)
 #endif
+#define XID_TO_HOST_SEQNO(s) HOST_TO_XID_SEQNO(s)
 
 /*
  * WSREPXid
  */
 
-#define WSREP_XID_PREFIX "WSREPXid"
+#define WSREP_XID_PREFIX_1 "WSREPXid" // seqno in host order
+#define WSREP_XID_PREFIX_2 "WS_XID_2" // seqno in little-endian order
+#define WSREP_XID_PREFIX WSREP_XID_PREFIX_2 // current version
 #define WSREP_XID_PREFIX_LEN MYSQL_XID_PREFIX_LEN
 #define WSREP_XID_UUID_OFFSET 8
 #define WSREP_XID_SEQNO_OFFSET (WSREP_XID_UUID_OFFSET + sizeof(wsrep_uuid_t))
@@ -70,7 +59,7 @@ wsrep_seqno_byteswap(wsrep_seqno_t const seqno)
 
 void wsrep_xid_init(XID& xid, const wsrep_uuid_t& uuid, wsrep_seqno_t seqno)
 {
-  seqno= host_to_xid_seqno(seqno);
+  seqno= HOST_TO_XID_SEQNO(seqno);
   xid.formatID= 1;
   xid.gtrid_length= WSREP_XID_GTRID_LEN;
   xid.bqual_length= 0;
@@ -80,13 +69,22 @@ void wsrep_xid_init(XID& xid, const wsrep_uuid_t& uuid, wsrep_seqno_t seqno)
   memcpy(xid.data + WSREP_XID_SEQNO_OFFSET, &seqno, sizeof(wsrep_seqno_t));
 }
 
+// returns XID version, 0 if not a wsrep XID
 int wsrep_is_wsrep_xid(const void* xid_ptr)
 {
   const XID* xid= reinterpret_cast<const XID*>(xid_ptr);
-  return (xid->formatID      == 1                   &&
-          xid->gtrid_length  == WSREP_XID_GTRID_LEN &&
-          xid->bqual_length  == 0                   &&
-          !memcmp(xid->data, WSREP_XID_PREFIX, WSREP_XID_PREFIX_LEN));
+
+  if (xid->formatID     == 1                   &&
+      xid->gtrid_length == WSREP_XID_GTRID_LEN &&
+      xid->bqual_length == 0)
+  {
+    if (!memcmp(xid->data, WSREP_XID_PREFIX_2, WSREP_XID_PREFIX_LEN))
+      return 2;
+    if (!memcmp(xid->data, WSREP_XID_PREFIX_1, WSREP_XID_PREFIX_LEN))
+      return 1;
+  }
+
+  return 0;
 }
 
 const wsrep_uuid_t* wsrep_xid_uuid(const XID& xid)
@@ -100,11 +98,17 @@ const wsrep_uuid_t* wsrep_xid_uuid(const XID& xid)
 
 wsrep_seqno_t wsrep_xid_seqno(const XID& xid)
 {
-  if (wsrep_is_wsrep_xid(&xid))
+  int const xid_ver = wsrep_is_wsrep_xid(&xid);
+  if (xid_ver)
   {
     wsrep_seqno_t seqno;
     memcpy(&seqno, xid.data + WSREP_XID_SEQNO_OFFSET, sizeof(wsrep_seqno_t));
-    return xid_to_host_seqno(seqno);
+#ifdef WORDS_BIGENDIAN
+    if (xid_ver >= 2)
+      return XID_TO_HOST_SEQNO(seqno);
+    else
+#endif /* WORDS_BIGENDIAN */
+    return seqno; // host and XID orders are the same
   }
   else
   {
