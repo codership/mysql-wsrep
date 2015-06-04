@@ -3369,8 +3369,7 @@ case SQLCOM_PREPARE:
         */
       if (!thd->is_current_stmt_binlog_format_row() ||
           !(create_info.options & HA_LEX_CREATE_TMP_TABLE))
-       WSREP_TO_ISOLATION_BEGIN(create_table->db, create_table->table_name,
-                                 NULL)
+       WSREP_TO_ISOLATION_BEGIN(create_table->db, WSREP_NONEXISTANT_TABLE, NULL)
 #endif /* WITH_WSREP */
         /* Regular CREATE TABLE */
         res= mysql_create_table(thd, create_table,

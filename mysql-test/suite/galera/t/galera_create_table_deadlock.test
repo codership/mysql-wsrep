@@ -1,0 +1,45 @@
+--source include/galera_cluster.inc
+--source include/have_innodb.inc
+--source include/have_debug_sync.inc
+--source suite/galera/include/galera_have_debug_sync.inc
+
+SET GLOBAL wsrep_debug=ON;
+SET GLOBAL wsrep_sync_wait=0;
+SET GLOBAL wsrep_retry_autocommit=0;
+
+--connection node_1
+SET SESSION wsrep_sync_wait=0;
+CREATE TABLE t1 (f1 INTEGER) ENGINE=InnoDB;
+SET GLOBAL wsrep_provider_options = 'debug=1;dbug=d,local_monitor_enter_sync';
+
+--connect node_1a, 127.0.0.1, root, , test, $NODE_MYPORT_1
+--connection node_1a
+--send CREATE TABLE IF NOT EXISTS t1 (f1 INTEGER) ENGINE=InnoDB;
+
+--connect node_1b, 127.0.0.1, root, , test, $NODE_MYPORT_1
+--connection node_1b
+
+--let $wait_condition = SELECT VARIABLE_VALUE = 'local_monitor_enter_sync' FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_debug_sync_waiters'
+--source include/wait_condition.inc
+
+--send INSERT INTO t1 VALUES (1);
+
+--connection node_1
+--let $wait_condition = SELECT VARIABLE_VALUE = 'local_monitor_enter_sync local_monitor_enter_sync' FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_debug_sync_waiters'
+--source include/wait_condition.inc
+
+
+SET GLOBAL wsrep_provider_options = 'dbug=';
+SET GLOBAL wsrep_provider_options = 'signal=local_monitor_enter_sync';
+
+--connection node_1b
+# (was causing a deadlock due to create table statement adding table key to write set)
+#--error ER_LOCK_DEADLOCK
+--reap
+
+--connection node_1
+SHOW STATUS LIKE 'wsrep_local_cert_failures';
+SET GLOBAL wsrep_retry_autocommit=1;
+SET GLOBAL wsrep_sync_wait=7;
+SET GLOBAL wsrep_debug=OFF;
+DROP TABLE t1;
