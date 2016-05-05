@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1865,17 +1865,16 @@ void Log_event::print_header(IO_CACHE* file,
   @param[in] file              IO cache
   @param[in] prt               Pointer to string
   @param[in] length            String length
-  @param[in] esc_all        Whether to escape all characters
 */
 
 static void
-my_b_write_quoted(IO_CACHE *file, const uchar *ptr, uint length, bool esc_all)
+my_b_write_quoted(IO_CACHE *file, const uchar *ptr, uint length)
 {
   const uchar *s;
   my_b_printf(file, "'");
   for (s= ptr; length > 0 ; s++, length--)
   {
-    if (*s > 0x1F && !esc_all)
+    if (*s > 0x1F && *s != '\'' && *s != '\\')
       my_b_write(file, s, 1);
     else
     {
@@ -1886,14 +1885,6 @@ my_b_write_quoted(IO_CACHE *file, const uchar *ptr, uint length, bool esc_all)
   }
   my_b_printf(file, "'");
 }
-
-
-static void
-my_b_write_quoted(IO_CACHE *file, const uchar *ptr, uint length)
-{
-  my_b_write_quoted(file, ptr, length, false);
-}
-
 
 /**
   Prints a bit string to io cache in format  b'1010'.
@@ -3772,7 +3763,8 @@ Query_log_event::Query_log_event(THD* thd_arg, const char* query_arg,
         cmd_can_generate_row_events= cmd_must_go_to_trx_cache= TRUE;
         break;
       default:
-        cmd_can_generate_row_events= sqlcom_can_generate_row_events(thd);
+        cmd_can_generate_row_events=
+          sqlcom_can_generate_row_events(thd->lex->sql_command);
         break;
     }
   }
@@ -3953,7 +3945,7 @@ Query_log_event::Query_log_event(const char* buf, uint event_len,
   
   slave_proxy_id= thread_id = uint4korr(buf + Q_THREAD_ID_OFFSET);
   exec_time = uint4korr(buf + Q_EXEC_TIME_OFFSET);
-  db_len = (uint)buf[Q_DB_LEN_OFFSET]; // TODO: add a check of all *_len vars
+  db_len = (uchar)buf[Q_DB_LEN_OFFSET]; // TODO: add a check of all *_len vars
   error_code = uint2korr(buf + Q_ERR_CODE_OFFSET);
 
   /*
@@ -4876,12 +4868,23 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
       else
       {
         rli->report(ERROR_LEVEL, expected_error, 
+#ifdef WITH_WSREP
+                          "\
+Query partially completed on the master (error on master: %d) \
+and was aborted. There is a chance that your master is inconsistent at this \
+point. If you are sure that your master is ok, run this query manually on the \
+slave and then restart the slave with SET GLOBAL SQL_SLAVE_SKIP_COUNTER=1; \
+START SLAVE; . Query: '%s'", expected_error,
+        (!opt_log_raw) && thd->rewritten_query.length()
+          ? thd->rewritten_query.c_ptr_safe() : thd->query());
+#else
                           "\
 Query partially completed on the master (error on master: %d) \
 and was aborted. There is a chance that your master is inconsistent at this \
 point. If you are sure that your master is ok, run this query manually on the \
 slave and then restart the slave with SET GLOBAL SQL_SLAVE_SKIP_COUNTER=1; \
 START SLAVE; . Query: '%s'", expected_error, thd->query());
+#endif /* WITH_WSREP */
         thd->is_slave_error= 1;
       }
       goto end;
@@ -4924,7 +4927,13 @@ compare_errors:
     DBUG_PRINT("info",("expected_error: %d  sql_errno: %d",
                        expected_error, actual_error));
 
-    if ((expected_error && expected_error != actual_error &&
+    /*
+      If a statement with expected error is received on slave and if the
+      statement is not filtered on the slave, only then compare the expected
+      error with the actual error that happened on slave.
+    */
+    if ((expected_error && rpl_filter->db_ok(thd->db) &&
+         expected_error != actual_error &&
          !concurrency_error_code(expected_error)) &&
         !ignored_error_code(actual_error) &&
         !ignored_error_code(expected_error))
@@ -4939,7 +4948,13 @@ Default database: '%s'. Query: '%s'",
                       expected_error,
                       actual_error ? thd->get_stmt_da()->message() : "no error",
                       actual_error,
+#ifdef WITH_WSREP
+                      print_slave_db_safe(db),
+                  (!opt_log_raw) && thd->rewritten_query.length()
+                  ? thd->rewritten_query.c_ptr_safe() : query_arg);
+#else
                       print_slave_db_safe(db), query_arg);
+#endif /* WITH_WSREP */
       thd->is_slave_error= 1;
     }
     /*
@@ -4982,7 +4997,13 @@ Default database: '%s'. Query: '%s'",
                     "Error '%s' on query. Default database: '%s'. Query: '%s'",
                     (actual_error ? thd->get_stmt_da()->message() :
                      "unexpected success or fatal error"),
+#ifdef WITH_WSREP
+                      print_slave_db_safe(thd->db),
+                  (!opt_log_raw) && thd->rewritten_query.length()
+                  ? thd->rewritten_query.c_ptr_safe() : query_arg);
+#else
                     print_slave_db_safe(thd->db), query_arg);
+#endif /* WITH_WSREP */
       }
       thd->is_slave_error= 1;
     }
@@ -11281,7 +11302,18 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli)
       const_cast<Relay_log_info*>(rli)->m_table_map.set_table(ptr->table_id, ptr->table);
 
 #ifdef HAVE_QUERY_CACHE
-    query_cache.invalidate_locked_for_write(rli->tables_to_lock);
+#ifdef WITH_WSREP
+    /*
+      Moved invalidation right before the call to rows_event_stmt_cleanup(),
+      to avoid query cache being polluted with stale entries,
+    */
+    if (! (WSREP(thd) && (thd->wsrep_exec_mode == REPL_RECV)))
+    {
+#endif /* WITH_WSREP */
+      query_cache.invalidate_locked_for_write(rli->tables_to_lock);
+#ifdef WITH_WSREP
+    }
+#endif /* WITH_WSREP */
 #endif
   }
 
@@ -11522,6 +11554,14 @@ AFTER_MAIN_EXEC_ROW_LOOP:
 
   if (get_flags(STMT_END_F))
   {
+
+#if defined(WITH_WSREP) && defined(HAVE_QUERY_CACHE)
+    if (WSREP(thd) && thd->wsrep_exec_mode == REPL_RECV)
+    {
+      query_cache.invalidate_locked_for_write(rli->tables_to_lock);
+    }
+#endif /* WITH_WSREP && HAVE_QUERY_CACHE */
+
    if((error= rows_event_stmt_cleanup(rli, thd)))
     slave_rows_error_report(ERROR_LEVEL,
                             thd->is_error() ? 0 : error,

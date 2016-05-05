@@ -631,6 +631,9 @@ The following options may be given as the first argument:
  --performance-schema-max-cond-instances=# 
  Maximum number of instrumented condition objects. Use 0
  to disable, -1 for automated sizing.
+ --performance-schema-max-digest-length=# 
+ Maximum length considered for digest text, when stored in
+ performance_schema tables.
  --performance-schema-max-file-classes=# 
  Maximum number of file instruments.
  --performance-schema-max-file-handles=# 
@@ -1050,6 +1053,7 @@ The following options may be given as the first argument:
  DBUG options to provider library
  --wsrep-debug       To enable debug level logging
  --wsrep-desync      To desynchronize the node from the cluster
+ --wsrep-dirty-reads Allow reads from a node is not in primary component
  --wsrep-drupal-282555-workaround 
  To use a workaround forbad autoincrement value
  --wsrep-forced-binlog-format=name 
@@ -1081,6 +1085,8 @@ The following options may be given as the first argument:
  --wsrep-provider-options=name 
  provider specific options
  --wsrep-recover     Recover database state after crash and exit
+ --wsrep-reject-queries[=name] 
+ Variable to set to reject queries
  --wsrep-replicate-myisam 
  To enable myisam replication
  --wsrep-restart-slave 
@@ -1303,6 +1309,7 @@ performance-schema-hosts-size -1
 performance-schema-instrument 
 performance-schema-max-cond-classes 80
 performance-schema-max-cond-instances -1
+performance-schema-max-digest-length 1024
 performance-schema-max-file-classes 50
 performance-schema-max-file-handles 32768
 performance-schema-max-file-instances -1
@@ -1417,6 +1424,7 @@ wsrep-data-home-dir
 wsrep-dbug-option 
 wsrep-debug FALSE
 wsrep-desync FALSE
+wsrep-dirty-reads FALSE
 wsrep-drupal-282555-workaround FALSE
 wsrep-forced-binlog-format NONE
 wsrep-load-data-splitting TRUE
@@ -1432,6 +1440,7 @@ wsrep-preordered FALSE
 wsrep-provider none
 wsrep-provider-options 
 wsrep-recover FALSE
+wsrep-reject-queries NONE
 wsrep-replicate-myisam FALSE
 wsrep-restart-slave FALSE
 wsrep-retry-autocommit 1

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1680,7 +1680,7 @@ int write_record(THD *thd, TABLE *table, COPY_INFO *info, COPY_INFO *update)
       else
         table->file->insert_id_for_cur_row= insert_id_for_cur_row;
       bool is_duplicate_key_error;
-      if (table->file->is_fatal_error(error, HA_CHECK_DUP))
+      if (table->file->is_fatal_error(error, HA_CHECK_DUP | HA_CHECK_FK_ERROR))
 	goto err;
       is_duplicate_key_error= table->file->is_fatal_error(error, 0);
       if (!is_duplicate_key_error)
@@ -1818,7 +1818,8 @@ int write_record(THD *thd, TABLE *table, COPY_INFO *info, COPY_INFO *update)
               error != HA_ERR_RECORD_IS_THE_SAME)
           {
             if (ignore_errors &&
-                !table->file->is_fatal_error(error, HA_CHECK_DUP_KEY))
+                !table->file->is_fatal_error(error, HA_CHECK_DUP_KEY |
+                                                    HA_CHECK_FK_ERROR))
             {
               goto ok_or_after_trg_err;
             }
@@ -1926,7 +1927,7 @@ int write_record(THD *thd, TABLE *table, COPY_INFO *info, COPY_INFO *update)
   {
     DEBUG_SYNC(thd, "write_row_noreplace");
     if (!ignore_errors ||
-        table->file->is_fatal_error(error, HA_CHECK_DUP))
+        table->file->is_fatal_error(error, HA_CHECK_DUP | HA_CHECK_FK_ERROR))
       goto err;
     table->file->restore_auto_increment(prev_insert_id);
     goto ok_or_after_trg_err;
@@ -1944,6 +1945,9 @@ ok_or_after_trg_err:
     my_safe_afree(key,table->s->max_unique_length,MAX_KEY_LENGTH);
   if (!table->file->has_transactions())
     thd->transaction.stmt.mark_modified_non_trans_table();
+  if (ignore_errors &&
+      !table->file->is_fatal_error(error, HA_CHECK_FK_ERROR))
+    warn_fk_constraint_violation(thd, table, error);
   DBUG_RETURN(trg_error);
 
 err:
@@ -2199,7 +2203,7 @@ public:
   MDL_request grl_protection;
 
   /** Creates a new delayed insert handler. */
-  Delayed_insert()
+  Delayed_insert(SELECT_LEX *current_select)
     :locks_in_memory(0), table(0),tables_in_use(0),stacked_inserts(0),
      status(0), handler_thread_initialized(FALSE), group_count(0)
   {
@@ -2210,7 +2214,7 @@ public:
             USERNAME_LENGTH);
     thd.current_tablenr=0;
     thd.set_command(COM_DELAYED_INSERT);
-    thd.lex->current_select= 0; 		// for my_message_sql
+    thd.lex->current_select= current_select;
     thd.lex->sql_command= SQLCOM_INSERT;        // For innodb::store_lock()
 
     /*
@@ -2392,7 +2396,7 @@ bool delayed_get_table(THD *thd, MDL_request *grl_protection_request,
     */
     if (! (di= find_handler(thd, table_list)))
     {
-      if (!(di= new Delayed_insert()))
+      if (!(di= new Delayed_insert(thd->lex->current_select)))
         goto end_create;
       di->table_list= *table_list;			// Needed to open table
       /* Replace volatile strings with local copies */
@@ -2941,6 +2945,16 @@ pthread_handler_t handle_delayed_insert(void *arg)
 
     if (di->open_and_lock_table())
       goto err;
+
+    /*
+      INSERT DELAYED generally expects thd->lex->current_select to be NULL,
+      since this is not an attribute of the current thread. This can lead to
+      problems if the thread that spawned the current one disconnects.
+      current_select will then point to freed memory. But current_select is
+      required to resolve the partition function. So, after fulfilling that
+      requirement, we set the current_select to 0.
+    */
+    thd->lex->current_select= NULL;
 
     /* Tell client that the thread is initialized */
     mysql_cond_signal(&di->cond_client);
@@ -3990,7 +4004,7 @@ static TABLE *create_table_from_items(THD *thd, HA_CREATE_INFO *create_info,
   /* Add selected items to field list */
   List_iterator_fast<Item> it(*items);
   Item *item;
-  Field *tmp_field;
+
   DBUG_ENTER("create_table_from_items");
 
   tmp_table.alias= 0;
@@ -4008,21 +4022,48 @@ static TABLE *create_table_from_items(THD *thd, HA_CREATE_INFO *create_info,
 
   while ((item=it++))
   {
-    Create_field *cr_field;
-    Field *field, *def_field;
+    Field *tmp_table_field;
     if (item->type() == Item::FUNC_ITEM)
+    {
       if (item->result_type() != STRING_RESULT)
-        field= item->tmp_table_field(&tmp_table);
+        tmp_table_field= item->tmp_table_field(&tmp_table);
       else
-        field= item->tmp_table_field_from_field_type(&tmp_table, 0);
+        tmp_table_field= item->tmp_table_field_from_field_type(&tmp_table, false);
+    }
     else
-      field= create_tmp_field(thd, &tmp_table, item, item->type(),
-                              (Item ***) 0, &tmp_field, &def_field, 0, 0, 0, 0);
-    if (!field ||
-	!(cr_field=new Create_field(field,(item->type() == Item::FIELD_ITEM ?
-					   ((Item_field *)item)->field :
-					   (Field*) 0))))
-      DBUG_RETURN(0);
+    {
+      Field *from_field, *default_field;
+      tmp_table_field= create_tmp_field(thd, &tmp_table, item, item->type(),
+                                        (Item ***) NULL,
+                                        &from_field, &default_field,
+                                        false, false, false, false);
+    }
+
+    if (!tmp_table_field)
+      DBUG_RETURN(NULL);
+
+    Field *table_field;
+
+    switch (item->type())
+    {
+    /*
+      We have to take into account both the real table's fields and
+      pseudo-fields used in trigger's body. These fields are used
+      to copy defaults values later inside constructor of
+      the class Create_field.
+    */
+    case Item::FIELD_ITEM:
+    case Item::TRIGGER_FIELD_ITEM:
+      table_field= ((Item_field *) item)->field;
+      break;
+    default:
+      table_field= NULL;
+    }
+
+    Create_field *cr_field= new Create_field(tmp_table_field, table_field);
+
+    if (!cr_field)
+      DBUG_RETURN(NULL);
 
     if (item->maybe_null)
       cr_field->flags &= ~NOT_NULL_FLAG;
@@ -4089,7 +4130,7 @@ static TABLE *create_table_from_items(THD *thd, HA_CREATE_INFO *create_info,
       }
     }
     if (!table)                                   // open failed
-      DBUG_RETURN(0);
+      DBUG_RETURN(NULL);
   }
   DBUG_RETURN(table);
 }
@@ -4399,7 +4440,8 @@ bool select_create::send_eof()
       if (thd->wsrep_conflict_state != NO_CONFLICT)
       {
         WSREP_DEBUG("select_create commit failed, thd: %lu err: %d %s", 
-                    thd->thread_id, thd->wsrep_conflict_state, thd->query());
+                    thd->thread_id, thd->wsrep_conflict_state,
+                    WSREP_QUERY(thd));
         mysql_mutex_unlock(&thd->LOCK_wsrep_thd);
         abort_result_set();
 	return TRUE;

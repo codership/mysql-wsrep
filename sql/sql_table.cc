@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2260,7 +2260,7 @@ int mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
   bool trans_tmp_table_deleted= 0, non_trans_tmp_table_deleted= 0;
   bool non_tmp_table_deleted= 0;
   bool have_nonexistent_tmp_table= 0;
-  bool is_drop_tmp_if_exists_added= 0;
+  bool is_drop_tmp_if_exists_with_no_defaultdb= 0;
   String built_query;
   String built_trans_tmp_query, built_non_trans_tmp_query;
   String nonexistent_tmp_tables;
@@ -2291,14 +2291,13 @@ int mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
     transaction and changes to non-transactional tables must be written
     ahead of the transaction in some circumstances.
 
-    6- Slave SQL thread ignores all replicate-* filter rules
-    for temporary tables with 'IF EXISTS' clause. (See sql/sql_parse.cc:
-    mysql_execute_command() for details). These commands will be binlogged
-    as they are, even if the default database (from USE `db`) is not present
-    on the Slave. This can cause point in time recovery failures later
-    when user uses the slave's binlog to re-apply. Hence at the time of binary
-    logging, these commands will be written with fully qualified table names
-    and use `db` will be suppressed.
+    6 - At the time of writing 'DROP TEMPORARY TABLE IF EXISTS'
+    statements into the binary log if the default database specified in
+    thd->db is present then they are binlogged as
+    'USE `default_db`; DROP TEMPORARY TABLE IF EXISTS `t1`;'
+    otherwise they will be binlogged with the actual database name to
+    which the table belongs to.
+    'DROP TEMPORARY TABLE IF EXISTS `actual_db`.`t1`
   */
   if (!dont_log_query)
   {
@@ -2313,7 +2312,14 @@ int mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
 
     if (thd->is_current_stmt_binlog_format_row() || if_exists)
     {
-      is_drop_tmp_if_exists_added= true;
+      /*
+        If default database doesnot exist in those cases set
+        'is_drop_tmp_if_exists_with_no_defaultdb flag to 'true' so that the
+        'DROP TEMPORARY TABLE IF EXISTS' command is logged with a qualified
+        table name.
+      */
+      if (thd->db != NULL && check_db_dir_existence(thd->db))
+        is_drop_tmp_if_exists_with_no_defaultdb= true;
       built_trans_tmp_query.set_charset(system_charset_info);
       built_trans_tmp_query.append("DROP TEMPORARY TABLE IF EXISTS ");
       built_non_trans_tmp_query.set_charset(system_charset_info);
@@ -2401,13 +2407,15 @@ int mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
           query.
         */
         if (thd->db == NULL || strcmp(db,thd->db) != 0
-            || is_drop_tmp_if_exists_added )
+            || is_drop_tmp_if_exists_with_no_defaultdb )
         {
-          append_identifier(thd, built_ptr_query, db, db_len);
+          append_identifier(thd, built_ptr_query, db, db_len,
+                            system_charset_info, thd->charset());
           built_ptr_query->append(".");
         }
         append_identifier(thd, built_ptr_query, table->table_name,
-                          strlen(table->table_name));
+                          strlen(table->table_name), system_charset_info,
+                          thd->charset());
         built_ptr_query->append(",");
       }
       /*
@@ -2469,12 +2477,14 @@ int mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
         */
         if (thd->db == NULL || strcmp(db,thd->db) != 0)
         {
-          append_identifier(thd, &built_query, db, db_len);
+          append_identifier(thd, &built_query, db, db_len,
+                            system_charset_info, thd->charset());
           built_query.append(".");
         }
 
         append_identifier(thd, &built_query, table->table_name,
-                          strlen(table->table_name));
+                          strlen(table->table_name), system_charset_info,
+                          thd->charset());
         built_query.append(",");
       }
     }
@@ -2648,7 +2658,7 @@ err:
                                    built_non_trans_tmp_query.ptr(),
                                    built_non_trans_tmp_query.length(),
                                    FALSE, FALSE,
-                                   is_drop_tmp_if_exists_added,
+                                   is_drop_tmp_if_exists_with_no_defaultdb,
                                    0);
         /*
           When temporary and regular tables or temporary tables with
@@ -2674,7 +2684,7 @@ err:
                                    built_trans_tmp_query.ptr(),
                                    built_trans_tmp_query.length(),
                                    TRUE, FALSE,
-                                   is_drop_tmp_if_exists_added,
+                                   is_drop_tmp_if_exists_with_no_defaultdb,
                                    0);
         /*
           When temporary and regular tables are dropped on a single
@@ -2687,7 +2697,13 @@ err:
         if (gtid_mode > 0 && non_tmp_table_deleted)
           error |= mysql_bin_log.commit(thd, true);
       }
-      if (non_tmp_table_deleted)
+      /*
+        when the DROP TABLE command is used to DROP a single table and if that
+        command fails then the query cannot generate 'partial results'. In
+        that case the query will not be written to the binary log.
+      */
+      if (non_tmp_table_deleted &&
+          (thd->lex->select_lex.table_list.elements > 1 || !error))
       {
         /* Chop of the last comma */
         built_query.chop();
@@ -3630,8 +3646,31 @@ mysql_prepare_create_table(THD *thd, HA_CREATE_INFO *create_info,
 	else
 	{
 	  /* Field redefined */
+
+          /*
+            If we are replacing a BIT field, revert the increment
+            of total_uneven_bit_length that was done above.
+          */
+          if (sql_field->sql_type == MYSQL_TYPE_BIT &&
+              file->ha_table_flags() & HA_CAN_BIT_FIELD)
+            total_uneven_bit_length-= sql_field->length & 7;
+
 	  sql_field->def=		dup_field->def;
 	  sql_field->sql_type=		dup_field->sql_type;
+
+          /*
+            If we are replacing a field with a BIT field, we need
+            to initialize pack_flag. Note that we do not need to
+            increment total_uneven_bit_length here as this dup_field
+            has already been processed.
+          */
+          if (sql_field->sql_type == MYSQL_TYPE_BIT)
+          {
+            sql_field->pack_flag= FIELDFLAG_NUMBER;
+            if (!(file->ha_table_flags() & HA_CAN_BIT_FIELD))
+              sql_field->pack_flag|= FIELDFLAG_TREAT_BIT_AS_CHAR;
+          }
+
 	  sql_field->charset=		(dup_field->charset ?
 					 dup_field->charset :
 					 create_info->default_table_charset);
@@ -4971,6 +5010,12 @@ bool create_table_impl(THD *thd,
     bool result= (open_table_def(thd, &share, 0) ||
                   open_table_from_share(thd, &share, "", 0, (uint) READ_ALL,
                                         0, &table, true));
+    /*
+      Assert that the change list is empty as no partition function currently
+      needs to modify item tree. May need call THD::rollback_item_tree_changes
+      later before calling closefrm if the change list is not empty.
+    */
+    DBUG_ASSERT(thd->change_list.is_empty());
     if (!result)
       (void) closefrm(&table, 0);
 
@@ -5331,7 +5376,7 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST* src_table,
     {
       /* CREATE TEMPORARY TABLE LIKE must be skipped from replication */
       WSREP_DEBUG("CREATE TEMPORARY TABLE LIKE... skipped replication\n %s", 
-                  thd->query());
+                  WSREP_QUERY(thd));
     } 
     else if (!is_tmp_table)
     {
@@ -5457,7 +5502,8 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST* src_table,
   /*
     We have to write the query before we unlock the tables.
   */
-  if (thd->is_current_stmt_binlog_format_row())
+  if (!thd->is_current_stmt_binlog_disabled() &&
+      thd->is_current_stmt_binlog_format_row())
   {
     /*
        Since temporary tables are not replicated under row-based
@@ -5505,6 +5551,21 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST* src_table,
               goto err;
             new_table= TRUE;
           }
+
+          /*
+            After opening a MERGE table add the children to the query list of
+            tables, so that children tables info can be used on "CREATE TABLE"
+            statement generation by the binary log.
+            Note that placeholders don't have the handler open.
+          */
+          if (table->table->file->extra(HA_EXTRA_ADD_CHILDREN_LIST))
+            goto err;
+
+          /*
+            As the reference table is temporary and may not exist on slave, we must
+            force the ENGINE to be present into CREATE TABLE.
+          */
+          create_info->used_fields|= HA_CREATE_USED_ENGINE;
 
           int result __attribute__((unused))=
             store_create_info(thd, table, &query,
@@ -8442,6 +8503,8 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         Also note that we ignore the LOCK clause here.
       */
       close_temporary_table(thd, altered_table, true, false);
+      (void) quick_rm_table(thd, new_db_type, alter_ctx.new_db,
+                            alter_ctx.tmp_name, FN_IS_TMP | NO_HA_TABLE);
       goto end_inplace;
     }
 

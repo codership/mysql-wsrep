@@ -2,12 +2,12 @@
 .\"     Title: \fBmy_print_defaults\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 05/05/2015
+.\"      Date: 03/02/2016
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.6
 .\"  Language: English
 .\"
-.TH "\FBMY_PRINT_DEFAULTS" "1" "05/05/2015" "MySQL 5\&.6" "MySQL Database System"
+.TH "\FBMY_PRINT_DEFAULTS" "1" "03/02/2016" "MySQL 5\&.6" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -170,10 +170,7 @@ Read options from the named login path in the
 \&.mylogin\&.cnf
 login path file\&. A
 \(lqlogin path\(rq
-is an option group that permits only a limited set of options:
-\fBhost\fR,
-\fBuser\fR, and
-\fBpassword\fR\&. Think of a login path as a set of values that indicate the server host and the credentials for authenticating with the server\&. To create the login path file, use the
+is an option group containing options that specify which MySQL server to connect to and which account to authenticate as\&. To create or modify a login path file, use the
 \fBmysql_config_editor\fR
 utility\&. See
 \fBmysql_config_editor\fR(1)\&. This option was added in MySQL 5\&.6\&.6\&.
@@ -210,7 +207,7 @@ Return an empty string\&.
 .sp
 As of MySQL 5\&.6\&.25,
 \fBmy_print_defaults\fR
-masks passwords by defaults\&. Use this option to display passwords in cleartext\&.
+masks passwords by default\&. Use this option to display passwords in cleartext\&.
 .RE
 .sp
 .RS 4
@@ -247,7 +244,7 @@ Display version information and exit\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2016, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2014, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -43,6 +43,13 @@ IF(UNIX)
 ENDIF()
 
 
+IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND CMAKE_COMPILER_IS_GNUCXX)
+  ## We will be using gcc to generate .so files
+  ## Add C flags (e.g. -m64) to CMAKE_SHARED_LIBRARY_C_FLAGS
+  SET(CMAKE_SHARED_LIBRARY_C_FLAGS
+    "${CMAKE_SHARED_LIBRARY_C_FLAGS} ${CMAKE_C_FLAGS}")
+ENDIF()
+
 
 # System type affects version_compile_os variable 
 IF(NOT SYSTEM_TYPE)
@@ -65,6 +72,10 @@ IF(CMAKE_SYSTEM_NAME MATCHES "SunOS")
   IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
     IF(SUNPRO_CXX_LIBRARY)
       SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=${SUNPRO_CXX_LIBRARY}")
+      IF(SUNPRO_CXX_LIBRARY STREQUAL "stdcxx4")
+        ADD_DEFINITIONS(-D__MATHERR_RENAME_EXCEPTION)
+        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -template=extdef")
+      ENDIF()
     ELSE()
       SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=stlport4")
     ENDIF()
@@ -88,45 +99,109 @@ MACRO(DIRNAME IN OUT)
   GET_FILENAME_COMPONENT(${OUT} ${IN} PATH)
 ENDMACRO()
 
+MACRO(FIND_REAL_LIBRARY SOFTLINK_NAME REALNAME)
+  # We re-distribute libstlport.so/libstdc++.so which are both symlinks.
+  # There is no 'readlink' on solaris, so we use perl to follow links:
+  SET(PERLSCRIPT
+    "my $link= $ARGV[0]; use Cwd qw(abs_path); my $file = abs_path($link); print $file;")
+  EXECUTE_PROCESS(
+    COMMAND perl -e "${PERLSCRIPT}" ${SOFTLINK_NAME}
+    RESULT_VARIABLE result
+    OUTPUT_VARIABLE real_library
+    )
+  SET(REALNAME ${real_library})
+ENDMACRO()
+
+MACRO(EXTEND_CXX_LINK_FLAGS LIBRARY_PATH)
+  # Using the $ORIGIN token with the -R option to locate the libraries
+  # on a path relative to the executable:
+  # We need an extra backslash to pass $ORIGIN to the mysql_config script...
+  SET(QUOTED_CMAKE_CXX_LINK_FLAGS
+    "${CMAKE_CXX_LINK_FLAGS} -R'\\$ORIGIN/../lib' -R${LIBRARY_PATH}")
+  SET(CMAKE_CXX_LINK_FLAGS
+    "${CMAKE_CXX_LINK_FLAGS} -R'\$ORIGIN/../lib' -R${LIBRARY_PATH}")
+  MESSAGE(STATUS "CMAKE_CXX_LINK_FLAGS ${CMAKE_CXX_LINK_FLAGS}")
+ENDMACRO()
+
+MACRO(EXTEND_C_LINK_FLAGS LIBRARY_PATH)
+  SET(QUOTED_CMAKE_C_LINK_FLAGS
+    "${CMAKE_C_LINK_FLAGS} -R'\\$ORIGIN/../lib' -R${LIBRARY_PATH}")
+  SET(CMAKE_C_LINK_FLAGS
+    "${CMAKE_C_LINK_FLAGS} -R'\$ORIGIN/../lib' -R${LIBRARY_PATH}")
+  MESSAGE(STATUS "CMAKE_C_LINK_FLAGS ${CMAKE_C_LINK_FLAGS}")
+  SET(CMAKE_SHARED_LIBRARY_C_FLAGS
+    "${CMAKE_SHARED_LIBRARY_C_FLAGS} -R'\$ORIGIN/..' -R'\$ORIGIN/../lib' -R${LIBRARY_PATH}")
+ENDMACRO()
+
 IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND
    CMAKE_C_COMPILER_ID MATCHES "SunPro" AND
    CMAKE_CXX_FLAGS MATCHES "stlport4")
   DIRNAME(${CMAKE_CXX_COMPILER} CXX_PATH)
-  SET(STLPORT_SUFFIX "lib/stlport4")
-  IF(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
-    SET(STLPORT_SUFFIX "lib/stlport4/v9")
+  # Also extract real path to the compiler(which is normally
+  # in <install_path>/prod/bin) and try to find the
+  # stlport libs relative to that location as well.
+  GET_FILENAME_COMPONENT(CXX_REALPATH ${CMAKE_CXX_COMPILER} REALPATH)
+
+  # CC -V yields
+  # CC: Sun C++ 5.13 SunOS_sparc Beta 2014/03/11
+  # CC: Sun C++ 5.11 SunOS_sparc 2010/08/13
+
+  EXECUTE_PROCESS(
+    COMMAND ${CMAKE_CXX_COMPILER} "-V"
+    OUTPUT_VARIABLE stdout
+    ERROR_VARIABLE  stderr
+    RESULT_VARIABLE result
+  )
+  IF(result)
+    MESSAGE(FATAL_ERROR "Failed to execute ${CMAKE_CXX_COMPILER} -V")
   ENDIF()
-  IF(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
-    SET(STLPORT_SUFFIX "lib/stlport4/amd64")
+
+  STRING(REGEX MATCH "CC: Sun C\\+\\+ 5\\.([0-9]+)" VERSION_STRING ${stderr})
+  SET(CC_MINOR_VERSION ${CMAKE_MATCH_1})
+
+  IF(${CC_MINOR_VERSION} EQUAL 13)
+    SET(STLPORT_SUFFIX "lib/compilers/stlport4")
+    IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
+      SET(STLPORT_SUFFIX "lib/compilers/stlport4/sparcv9")
+    ENDIF()
+    IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
+      SET(STLPORT_SUFFIX "lib/compilers/stlport4/amd64")
+    ENDIF()
+  ELSE()
+    SET(STLPORT_SUFFIX "lib/stlport4")
+    IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
+      SET(STLPORT_SUFFIX "lib/stlport4/v9")
+    ENDIF()
+    IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
+      SET(STLPORT_SUFFIX "lib/stlport4/amd64")
+    ENDIF()
   ENDIF()
 
   FIND_LIBRARY(STL_LIBRARY_NAME
     NAMES "stlport"
     PATHS ${CXX_PATH}/../${STLPORT_SUFFIX}
+          ${CXX_REALPATH}/../../${STLPORT_SUFFIX}
   )
   MESSAGE(STATUS "STL_LIBRARY_NAME ${STL_LIBRARY_NAME}")
   IF(STL_LIBRARY_NAME)
     DIRNAME(${STL_LIBRARY_NAME} STLPORT_PATH)
-    # We re-distribute libstlport.so which is a symlink to libstlport.so.1
-    # There is no 'readlink' on solaris, so we use perl to follow links:
-    SET(PERLSCRIPT
-      "my $link= $ARGV[0]; use Cwd qw(abs_path); my $file = abs_path($link); print $file;")
-    EXECUTE_PROCESS(
-      COMMAND perl -e "${PERLSCRIPT}" ${STL_LIBRARY_NAME}
-      RESULT_VARIABLE result
-      OUTPUT_VARIABLE real_library
-    )
+    FIND_REAL_LIBRARY(${STL_LIBRARY_NAME} real_library)
     MESSAGE(STATUS "INSTALL ${STL_LIBRARY_NAME} ${real_library}")
     INSTALL(FILES ${STL_LIBRARY_NAME} ${real_library}
-            DESTINATION ${INSTALL_LIBDIR} COMPONENT Development)
-    # Using the $ORIGIN token with the -R option to locate the libraries
-    # on a path relative to the executable:
-    # We need an extra backslash to pass $ORIGIN to the mysql_config script...
-    SET(QUOTED_CMAKE_CXX_LINK_FLAGS
-      "${CMAKE_CXX_LINK_FLAGS} -R'\\$ORIGIN/../lib' -R${STLPORT_PATH}")
-    SET(CMAKE_CXX_LINK_FLAGS
-      "${CMAKE_CXX_LINK_FLAGS} -R'\$ORIGIN/../lib' -R${STLPORT_PATH}")
-    MESSAGE(STATUS "CMAKE_CXX_LINK_FLAGS ${CMAKE_CXX_LINK_FLAGS}")
+            DESTINATION ${INSTALL_LIBDIR} COMPONENT SharedLibraries)
+    EXTEND_C_LINK_FLAGS(${STLPORT_PATH})
+    EXTEND_CXX_LINK_FLAGS(${STLPORT_PATH})
+  ELSE()
+    MESSAGE(STATUS "Failed to find the required stlport library, print some"
+                   "variables to help debugging and bail out")
+    MESSAGE(STATUS "CMAKE_CXX_COMPILER ${CMAKE_CXX_COMPILER}")
+    MESSAGE(STATUS "CXX_PATH ${CXX_PATH}")
+    MESSAGE(STATUS "CXX_REALPATH ${CXX_REALPATH}")
+    MESSAGE(STATUS "STLPORT_SUFFIX ${STLPORT_SUFFIX}")
+    MESSAGE(STATUS "PATH: ${CXX_PATH}/../${STLPORT_SUFFIX}")
+    MESSAGE(STATUS "PATH: ${CXX_REALPATH}/../../${STLPORT_SUFFIX}")
+    MESSAGE(FATAL_ERROR
+      "Could not find the required stlport library.")
   ENDIF()
 ENDIF()
 
@@ -667,7 +742,7 @@ MY_CHECK_TYPE_SIZE(char CHAR)
 MY_CHECK_TYPE_SIZE(short SHORT)
 MY_CHECK_TYPE_SIZE(int INT)
 MY_CHECK_TYPE_SIZE("long long" LONG_LONG)
-SET(CMAKE_EXTRA_INCLUDE_FILES stdio.h sys/types.h)
+SET(CMAKE_EXTRA_INCLUDE_FILES stdio.h sys/types.h time.h)
 MY_CHECK_TYPE_SIZE(off_t OFF_T)
 MY_CHECK_TYPE_SIZE(uchar UCHAR)
 MY_CHECK_TYPE_SIZE(uint UINT)
@@ -682,6 +757,7 @@ MY_CHECK_TYPE_SIZE(u_int32_t U_INT32_T)
 MY_CHECK_TYPE_SIZE(int64 INT64)
 MY_CHECK_TYPE_SIZE(uint64 UINT64)
 MY_CHECK_TYPE_SIZE(time_t TIME_T)
+MY_CHECK_TYPE_SIZE("struct timespec" STRUCT_TIMESPEC)
 SET (CMAKE_EXTRA_INCLUDE_FILES sys/types.h)
 MY_CHECK_TYPE_SIZE(bool  BOOL)
 SET(CMAKE_EXTRA_INCLUDE_FILES)
@@ -1139,3 +1215,22 @@ SET(CMAKE_EXTRA_INCLUDE_FILES)
 CHECK_STRUCT_HAS_MEMBER("struct dirent" d_ino "dirent.h"  STRUCT_DIRENT_HAS_D_INO)
 CHECK_STRUCT_HAS_MEMBER("struct dirent" d_namlen "dirent.h"  STRUCT_DIRENT_HAS_D_NAMLEN)
 SET(SPRINTF_RETURNS_INT 1)
+
+CHECK_INCLUDE_FILES (numaif.h HAVE_NUMAIF_H)
+OPTION(WITH_NUMA "Explicitly set NUMA memory allocation policy" ON)
+IF(HAVE_NUMAIF_H AND WITH_NUMA)
+    SET(SAVE_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
+    SET(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} numa)
+    CHECK_C_SOURCE_COMPILES(
+    "
+    #include <numa.h>
+    #include <numaif.h>
+    int main()
+    {
+       struct bitmask *all_nodes= numa_all_nodes_ptr;
+       set_mempolicy(MPOL_DEFAULT, 0, 0);
+       return all_nodes != NULL;
+    }"
+    HAVE_LIBNUMA)
+    SET(CMAKE_REQUIRED_LIBRARIES ${SAVE_CMAKE_REQUIRED_LIBRARIES})
+ENDIF()

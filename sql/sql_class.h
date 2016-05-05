@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights
    reserved.
 
    This program is free software; you can redistribute it and/or modify
@@ -568,6 +568,8 @@ typedef struct system_variables
   uint wsrep_sync_wait;
   ulong wsrep_retry_autocommit;
   ulong wsrep_OSU_method;
+  my_bool wsrep_dirty_reads;
+  ulong wsrep_auto_increment_control;
 #endif
   double long_query_time_double;
 
@@ -874,7 +876,7 @@ public:
   String      rewritten_query;
 
   inline char *query() const { return query_string.str(); }
-  inline uint32 query_length() const { return query_string.length(); }
+  inline uint32 query_length() const { return (uint32)query_string.length(); }
   const CHARSET_INFO *query_charset() const { return query_string.charset(); }
   void set_query_inner(const CSET_STRING &string_arg)
   {
@@ -2362,6 +2364,9 @@ public:
     return (WSREP_BINLOG_FORMAT((ulong)current_stmt_binlog_format) ==
             BINLOG_FORMAT_ROW);
   }
+
+  bool is_current_stmt_binlog_disabled() const;
+
   /** Tells whether the given optimizer_switch flag is on */
   inline bool optimizer_switch_flag(ulonglong flag) const
   {
@@ -3021,6 +3026,7 @@ public:
   {
     CE_NONE= 0,
     CE_FLUSH_ERROR,
+    CE_SYNC_ERROR,
     CE_COMMIT_ERROR,
     CE_ERROR_COUNT
   } commit_error;
@@ -3198,6 +3204,7 @@ public:
   rpl_sid                   wsrep_po_sid;
   void*                     wsrep_apply_format;
   bool                      wsrep_apply_toi; /* applier processing in TOI */
+  wsrep_gtid_t              wsrep_sync_wait_gtid;
 #endif /* WITH_WSREP */
   /**
     Internal parser state.
@@ -4204,6 +4211,14 @@ private:
    */
   LEX_STRING invoker_user;
   LEX_STRING invoker_host;
+public:
+  /**
+    This is only used by master dump threads.
+    When the master receives a new connection from a slave with a UUID that
+    is already connected, it will set this flag TRUE before killing the old
+    slave connection.
+  */
+  bool duplicate_slave_uuid;
 };
 
 
@@ -4993,7 +5008,7 @@ class user_var_entry
     @retval        false on success
     @retval        true on memory allocation error
   */
-  bool store(void *from, uint length, Item_result type);
+  bool store(const void *from, uint length, Item_result type);
 
 public:
   user_var_entry() {}                         /* Remove gcc warning */
@@ -5016,7 +5031,7 @@ public:
     @retval        false on success
     @retval        true on memory allocation error
   */
-  bool store(void *from, uint length, Item_result type,
+  bool store(const void *from, uint length, Item_result type,
              const CHARSET_INFO *cs, Derivation dv, bool unsigned_arg);
   /**
     Set type of to the given value.
@@ -5045,7 +5060,7 @@ public:
   static user_var_entry *create(const Name_string &name)
   {
     user_var_entry *entry;
-    uint size= ALIGN_SIZE(sizeof(user_var_entry)) +
+    size_t size= ALIGN_SIZE(sizeof(user_var_entry)) +
                (name.length() + 1) + extra_size;
     if (!(entry= (user_var_entry*) my_malloc(size, MYF(MY_WME |
                                                        ME_FATALERROR))))
@@ -5384,6 +5399,14 @@ public:
   sent by the user (ie: stored procedure).
 */
 #define CF_SKIP_QUESTIONS       (1U << 1)
+#ifdef WITH_WSREP
+/**
+  Do not check that wsrep snapshot is ready before allowing this command
+*/
+#define CF_SKIP_WSREP_CHECK     (1U << 2)
+#else
+#define CF_SKIP_WSREP_CHECK     0
+#endif /* WITH_WSREP */
 
 void add_to_status(STATUS_VAR *to_var, STATUS_VAR *from_var);
 
@@ -5418,5 +5441,21 @@ inline bool add_group_to_list(THD *thd, Item *item, bool asc)
 }
 
 #endif /* MYSQL_SERVER */
+
+/**
+  Create a temporary file.
+
+  @details
+  The temporary file is created in a location specified by the parameter
+  path. if path is null, then it will be created on the location given
+  by the mysql server configuration (--tmpdir option).  The caller
+  does not need to delete the file, it will be deleted automatically.
+
+  @param path	location for creating temporary file
+  @param prefix	prefix for temporary file name
+  @retval -1	error
+  @retval >= 0	a file handle that can be passed to dup or my_close
+*/
+int mysql_tmpfile_path(const char* path, const char* prefix);
 
 #endif /* SQL_CLASS_INCLUDED */

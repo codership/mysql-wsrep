@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -299,7 +299,10 @@ JOIN::create_intermediate_table(JOIN_TAB *tab, List<Item> *tmp_table_fields,
 
 err:
   if (table != NULL)
+  {
     free_tmp_table(thd, table);
+    tab->table= NULL;
+  }
   DBUG_RETURN(true);
 }
 
@@ -1602,6 +1605,10 @@ evaluate_join_record(JOIN *join, JOIN_TAB *join_tab)
       join->thd->get_stmt_da()->inc_current_row_for_warning();
       if (rc != NESTED_LOOP_OK)
         DBUG_RETURN(rc);
+
+      /* check for errors evaluating the condition */
+      if (join->thd->is_error())
+        DBUG_RETURN(NESTED_LOOP_ERROR);
 
       if (join_tab->do_loosescan() && join_tab->match_tab->found_match)
       {

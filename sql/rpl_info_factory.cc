@@ -344,12 +344,7 @@ err:
   if (error)
     sql_print_error("Could not delete from Slave Workers info repository.");
   rli->recovery_parallel_workers= 0;
-  if (rli->recovery_groups_inited)
-  {
-    bitmap_free(&rli->recovery_groups);
-    rli->mts_recovery_group_cnt= 0;
-    rli->recovery_groups_inited= false;
-  }
+  rli->clear_mts_recovery_groups();
   if (rli->flush_info(true))
   {
     error= true;
@@ -412,9 +407,20 @@ Slave_worker *Rpl_info_factory::create_worker(uint rli_option, uint worker_id,
 
   if (decide_repository(worker, rli_option, &handler_src, &handler_dest, &msg))
     goto err;
-       
-  if (worker->rli_init_info(is_gaps_collecting_phase))
+
+  if (DBUG_EVALUATE_IF("mts_worker_thread_init_fails", 1, 0) ||
+      worker->rli_init_info(is_gaps_collecting_phase))
   {
+    DBUG_EXECUTE_IF("enable_mts_worker_failure_init",
+                    {
+                      DBUG_SET("-d,mts_worker_thread_init_fails");
+                      DBUG_SET("-d,enable_mts_worker_failure_init");
+                    });
+    DBUG_EXECUTE_IF("enable_mts_wokrer_failure_in_recovery_finalize",
+                    {
+                      DBUG_SET("-d,mts_worker_thread_init_fails");
+                      DBUG_SET("-d,enable_mts_wokrer_failure_in_recovery_finalize");
+                    });
     msg= "Failed to initialize the worker info structure";
     goto err;
   }

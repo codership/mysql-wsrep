@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -53,6 +53,7 @@
 #include <mysql/plugin_validate_password.h>
 #include "password.h"
 #include "crypt_genhash_impl.h"
+#include "debug_sync.h"
 
 #if defined(HAVE_OPENSSL) && !defined(HAVE_YASSL)
 #include <openssl/rsa.h>
@@ -841,7 +842,6 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
                        NULL, 1, 1, FALSE))
     goto end;
   table->use_all_columns();
-  (void) my_init_dynamic_array(&acl_users,sizeof(ACL_USER),50,100);
   
   allow_all_hosts=0;
   while (!(read_record_info.read_record(&read_record_info)))
@@ -1141,7 +1141,6 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
                        NULL, 1, 1, FALSE))
     goto end;
   table->use_all_columns();
-  (void) my_init_dynamic_array(&acl_dbs,sizeof(ACL_DB),50,100);
   while (!(read_record_info.read_record(&read_record_info)))
   {
     /* Reading record in mysql.db */
@@ -1202,8 +1201,6 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
   freeze_size(&acl_dbs);
 
   /* Prepare to read records from the mysql.proxies_priv table */
-  (void) my_init_dynamic_array(&acl_proxy_users, sizeof(ACL_PROXY_USER), 
-                               50, 100);
   if (tables[2].table)
   {
     if (init_read_record(&read_record_info, thd, table= tables[2].table,
@@ -1431,6 +1428,9 @@ my_bool acl_reload(THD *thd)
   old_acl_users= acl_users;
   old_acl_proxy_users= acl_proxy_users;
   old_acl_dbs= acl_dbs;
+  my_init_dynamic_array(&acl_users, sizeof(ACL_USER), 50, 100);
+  my_init_dynamic_array(&acl_dbs, sizeof(ACL_DB), 50, 100);
+  my_init_dynamic_array(&acl_proxy_users, sizeof(ACL_PROXY_USER), 50, 100);
   old_mem= global_acl_memory;
   delete_dynamic(&acl_wild_hosts);
   my_hash_free(&acl_check_hosts);
@@ -1456,6 +1456,8 @@ my_bool acl_reload(THD *thd)
     mysql_mutex_unlock(&acl_cache->lock);
 end:
   close_acl_tables(thd);
+
+  DEBUG_SYNC(thd, "after_acl_reload");
   DBUG_RETURN(return_val);
 }
 
@@ -5593,10 +5595,10 @@ my_bool grant_reload(THD *thd)
     tables[2].table i.e. procs_priv can be null if we are working with
     pre 4.1 privilage tables
   */
-  if ((return_val= grant_load(thd, tables)) ||
-                   (tables[2].table != NULL &&
-                    grant_reload_procs_priv(thd, &tables[2]))
-     )
+  if ((return_val= (grant_load(thd, tables) ||
+                    (tables[2].table != NULL &&
+                     grant_reload_procs_priv(thd, &tables[2])))
+     ))
   {						// Error. Revert to old hash
     DBUG_PRINT("error",("Reverting to old privileges"));
     my_hash_free(&column_priv_hash);
@@ -5694,24 +5696,27 @@ bool check_grant(THD *thd, ulong want_access, TABLE_LIST *tables,
        tl && number-- && tl != first_not_own_table;
        tl= tl->next_global)
   {
-    sctx = MY_TEST(tl->security_ctx) ? tl->security_ctx : thd->security_ctx;
+    TABLE_LIST *const t_ref=
+      tl->correspondent_table ? tl->correspondent_table : tl;
+    sctx = MY_TEST(t_ref->security_ctx) ? t_ref->security_ctx :
+                                          thd->security_ctx;
 
     const ACL_internal_table_access *access=
-      get_cached_table_access(&tl->grant.m_internal,
-                              tl->get_db_name(),
-                              tl->get_table_name());
+      get_cached_table_access(&t_ref->grant.m_internal,
+                              t_ref->get_db_name(),
+                              t_ref->get_table_name());
 
     if (access)
     {
-      switch(access->check(orig_want_access, &tl->grant.privilege))
+      switch(access->check(orig_want_access, &t_ref->grant.privilege))
       {
       case ACL_INTERNAL_ACCESS_GRANTED:
         /*
            Grant all access to the table to skip column checks.
            Depend on the controls in the P_S table itself.
         */
-        tl->grant.privilege|= TMP_TABLE_ACLS;
-        tl->grant.want_privilege= 0;
+        t_ref->grant.privilege|= TMP_TABLE_ACLS;
+        t_ref->grant.want_privilege= 0;
         continue;
       case ACL_INTERNAL_ACCESS_DENIED:
         goto err;
@@ -5725,26 +5730,26 @@ bool check_grant(THD *thd, ulong want_access, TABLE_LIST *tables,
     if (!want_access)
       continue;                                 // ok
 
-    if (!(~tl->grant.privilege & want_access) ||
-        tl->is_anonymous_derived_table() || tl->schema_table)
+    if (!(~t_ref->grant.privilege & want_access) ||
+        t_ref->is_anonymous_derived_table() || t_ref->schema_table)
     {
       /*
-        It is subquery in the FROM clause. VIEW set tl->derived after
+        It is subquery in the FROM clause. VIEW set t_ref->derived after
         table opening, but this function always called before table opening.
       */
-      if (!tl->referencing_view)
+      if (!t_ref->referencing_view)
       {
         /*
           If it's a temporary table created for a subquery in the FROM
           clause, or an INFORMATION_SCHEMA table, drop the request for
           a privilege.
         */
-        tl->grant.want_privilege= 0;
+        t_ref->grant.want_privilege= 0;
       }
       continue;
     }
 
-    if (is_temporary_table(tl))
+    if (is_temporary_table(t_ref))
     {
       /*
         If this table list element corresponds to a pre-opened temporary
@@ -5752,21 +5757,21 @@ bool check_grant(THD *thd, ulong want_access, TABLE_LIST *tables,
         Note that during creation of temporary table we still need to check
         if user has CREATE_TMP_ACL.
       */
-      tl->grant.privilege|= TMP_TABLE_ACLS;
-      tl->grant.want_privilege= 0;
+      t_ref->grant.privilege|= TMP_TABLE_ACLS;
+      t_ref->grant.want_privilege= 0;
       continue;
     }
 
     GRANT_TABLE *grant_table= table_hash_search(sctx->get_host()->ptr(),
                                                 sctx->get_ip()->ptr(),
-                                                tl->get_db_name(),
+                                                t_ref->get_db_name(),
                                                 sctx->priv_user,
-                                                tl->get_table_name(),
+                                                t_ref->get_table_name(),
                                                 FALSE);
 
     if (!grant_table)
     {
-      want_access &= ~tl->grant.privilege;
+      want_access &= ~t_ref->grant.privilege;
       goto err;					// No grants
     }
 
@@ -5777,17 +5782,17 @@ bool check_grant(THD *thd, ulong want_access, TABLE_LIST *tables,
     if (any_combination_will_do)
       continue;
 
-    tl->grant.grant_table= grant_table; // Remember for column test
-    tl->grant.version= grant_version;
-    tl->grant.privilege|= grant_table->privs;
-    tl->grant.want_privilege= ((want_access & COL_ACLS) & ~tl->grant.privilege);
+    t_ref->grant.grant_table= grant_table; // Remember for column test
+    t_ref->grant.version= grant_version;
+    t_ref->grant.privilege|= grant_table->privs;
+    t_ref->grant.want_privilege= ((want_access & COL_ACLS) & ~t_ref->grant.privilege);
 
-    if (!(~tl->grant.privilege & want_access))
+    if (!(~t_ref->grant.privilege & want_access))
       continue;
 
-    if (want_access & ~(grant_table->cols | tl->grant.privilege))
+    if (want_access & ~(grant_table->cols | t_ref->grant.privilege))
     {
-      want_access &= ~(grant_table->cols | tl->grant.privilege);
+      want_access &= ~(grant_table->cols | t_ref->grant.privilege);
       goto err;					// impossible
     }
   }
@@ -8718,11 +8723,14 @@ acl_check_proxy_grant_access(THD *thd, const char *host, const char *user,
     DBUG_RETURN(FALSE);
   }
 
+  mysql_mutex_lock(&acl_cache->lock);
+
   /* check for matching WITH PROXY rights */
   for (uint i=0; i < acl_proxy_users.elements; i++)
   {
     ACL_PROXY_USER *proxy= dynamic_element(&acl_proxy_users, i, 
                                            ACL_PROXY_USER *);
+    DEBUG_SYNC(thd, "before_proxy_matches");
     if (proxy->matches(thd->security_ctx->get_host()->ptr(),
                        thd->security_ctx->user,
                        thd->security_ctx->get_ip()->ptr(),
@@ -8730,10 +8738,12 @@ acl_check_proxy_grant_access(THD *thd, const char *host, const char *user,
         proxy->get_with_grant())
     {
       DBUG_PRINT("info", ("found"));
+      mysql_mutex_unlock(&acl_cache->lock);
       DBUG_RETURN(FALSE);
     }
   }
 
+  mysql_mutex_unlock(&acl_cache->lock);
   my_error(ER_ACCESS_DENIED_NO_PASSWORD_ERROR, MYF(0),
            thd->security_ctx->user,
            thd->security_ctx->host_or_ip);
@@ -10230,12 +10240,17 @@ char *get_56_lenc_string(char **buffer,
 
   *string_length= (size_t)net_field_length_ll((uchar **)buffer);
 
+  DBUG_EXECUTE_IF("sha256_password_scramble_too_long",
+                  *string_length= SIZE_T_MAX;
+  );
+
   size_t len_len= (size_t)(*buffer - begin);
   
-  if (*string_length + len_len > *max_bytes_available)
+  if (*string_length > *max_bytes_available - len_len)
     return NULL;
 
-  *max_bytes_available -= *string_length + len_len;
+  *max_bytes_available -= *string_length;
+  *max_bytes_available -= len_len;
   *buffer += *string_length;
   return (char *)(begin + len_len);
 }
@@ -10333,8 +10348,6 @@ static ulong parse_client_handshake_packet(MPVIO_EXT *mpvio,
     mpvio->client_capabilities= uint4korr(end);
     mpvio->max_client_packet_length= 0xfffff;
     charset_code= global_system_variables.character_set_client->number;
-    if (mpvio->charset_adapter->init_client_charset(charset_code))
-      return packet_error;
     goto skip_to_ssl;
   }
   
@@ -10372,10 +10385,6 @@ static ulong parse_client_handshake_packet(MPVIO_EXT *mpvio,
     charset_code= global_system_variables.character_set_client->number;
   }
 
-  DBUG_PRINT("info", ("client_character_set: %u", charset_code));
-  if (mpvio->charset_adapter->init_client_charset(charset_code))
-    return packet_error;
-
 skip_to_ssl:
 #if defined(HAVE_OPENSSL)
   DBUG_PRINT("info", ("client capabilities: %lu", mpvio->client_capabilities));
@@ -10388,6 +10397,9 @@ skip_to_ssl:
   if (mpvio->client_capabilities & CLIENT_SSL)
   {
     unsigned long errptr;
+#if !defined(DBUG_OFF)
+    uint ssl_charset_code= 0;
+#endif
 
     /* Do the SSL layering. */
     if (!ssl_acceptor_fd)
@@ -10425,6 +10437,10 @@ skip_to_ssl:
     {
       packet_has_required_size= bytes_remaining_in_packet >= 
         AUTH_PACKET_HEADER_SIZE_PROTO_41;
+#if !defined(DBUG_OFF)
+      ssl_charset_code= (uint)(uchar)*((char *)net->read_pos + 8);
+      DBUG_PRINT("info", ("client_character_set: %u", ssl_charset_code));
+#endif
       end= (char *)net->read_pos + AUTH_PACKET_HEADER_SIZE_PROTO_41;
       bytes_remaining_in_packet -= AUTH_PACKET_HEADER_SIZE_PROTO_41;
     }
@@ -10434,12 +10450,23 @@ skip_to_ssl:
         AUTH_PACKET_HEADER_SIZE_PROTO_40;
       end= (char *)net->read_pos + AUTH_PACKET_HEADER_SIZE_PROTO_40;
       bytes_remaining_in_packet -= AUTH_PACKET_HEADER_SIZE_PROTO_40;
+#if !defined(DBUG_OFF)
+      /**
+        Old clients didn't have their own charset. Instead the assumption
+        was that they used what ever the server used.
+      */
+      ssl_charset_code= global_system_variables.character_set_client->number;
+#endif
     }
-    
+    DBUG_ASSERT(charset_code == ssl_charset_code);
     if (!packet_has_required_size)
       return packet_error;
   }
 #endif /* HAVE_OPENSSL */
+
+  DBUG_PRINT("info", ("client_character_set: %u", charset_code));
+  if (mpvio->charset_adapter->init_client_charset(charset_code))
+    return packet_error;
 
   if ((mpvio->client_capabilities & CLIENT_TRANSACTIONS) &&
       opt_using_transactions)

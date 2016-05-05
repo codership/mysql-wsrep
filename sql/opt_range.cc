@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights
  * reserved.
 
    This program is free software; you can redistribute it and/or modify
@@ -3875,10 +3875,19 @@ int find_used_partitions(PART_PRUNE_PARAM *ppar, SEL_ARG *key_tree)
                                          key_tree->min_flag |
                                            key_tree->max_flag,
                                          &subpart_iter);
-      DBUG_ASSERT(res); /* We can't get "no satisfying subpartitions" */
+      if (res == 0)
+      {
+        /*
+           The only case where we can get "no satisfying subpartitions"
+           returned from the above call is when an error has occurred.
+        */
+        DBUG_ASSERT(range_par->thd->is_error());
+        return 0;
+      }
+
       if (res == -1)
         goto pop_and_go_right; /* all subpartitions satisfy */
-        
+
       uint32 subpart_id;
       bitmap_clear_all(&ppar->subparts_bitmap);
       while ((subpart_id= subpart_iter.get_next(&subpart_iter)) !=
@@ -5225,7 +5234,7 @@ static bool ror_intersect_add(ROR_INTERSECT_INFO *info,
   {
     Cost_estimate sweep_cost;
     JOIN *join= info->param->thd->lex->select_lex.join;
-    const bool is_interrupted= join && join->tables == 1;
+    const bool is_interrupted= join && join->tables != 1;
     get_sweep_read_cost(info->param->table, double2rows(info->out_rows),
                         is_interrupted, &sweep_cost);
     info->total_cost += sweep_cost.total_cost();
@@ -7758,21 +7767,19 @@ get_range(SEL_ARG **e1,SEL_ARG **e2,SEL_ARG *root1)
 static SEL_ARG *
 key_or(RANGE_OPT_PARAM *param, SEL_ARG *key1, SEL_ARG *key2)
 {
-  if (!key1)
+  if (key1 == NULL || key1->type == SEL_ARG::ALWAYS)
   {
     if (key2)
     {
       key2->use_count--;
       key2->free_tree();
     }
-    return 0;
+    return key1;
   }
-  if (!key2)
-  {
-    key1->use_count--;
-    key1->free_tree();
-    return 0;
-  }
+  if (key2 == NULL || key2->type == SEL_ARG::ALWAYS)
+    // Case is symmetric to the one above, just flip parameters.
+    return key_or(param, key2, key1);
+
   key1->use_count--;
   key2->use_count--;
 
@@ -7804,7 +7811,7 @@ key_or(RANGE_OPT_PARAM *param, SEL_ARG *key1, SEL_ARG *key2)
     {
       swap_variables(SEL_ARG *,key1,key2);
     }
-    if (key1->use_count > 0 || !(key1=key1->clone_tree(param)))
+    if (key1->use_count > 0 && (key1= key1->clone_tree(param)) == NULL)
       return 0;                                 // OOM
   }
 
@@ -12866,7 +12873,12 @@ bool QUICK_GROUP_MIN_MAX_SELECT::add_range(SEL_ARG *sel_range)
     if (sel_range->maybe_null &&
         sel_range->min_value[0] && sel_range->max_value[0])
       range_flag|= NULL_RANGE; /* IS NULL condition */
-    else if (memcmp(sel_range->min_value, sel_range->max_value,
+    /*
+      Do not perform comparison if one of the argiment is NULL value.
+    */
+    else if (!sel_range->min_value[0] &&
+             !sel_range->max_value[0] &&
+             memcmp(sel_range->min_value, sel_range->max_value,
                     min_max_arg_len) == 0)
       range_flag|= EQ_RANGE;  /* equality condition */
   }

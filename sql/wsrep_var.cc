@@ -38,6 +38,7 @@ const  char* wsrep_node_name        = 0;
 const  char* wsrep_node_address     = 0;
 const  char* wsrep_node_incoming_address = 0;
 const  char* wsrep_start_position   = 0;
+ulong   wsrep_reject_queries;
 
 int wsrep_init_vars()
 {
@@ -330,6 +331,27 @@ void wsrep_provider_options_init(const char* value)
   wsrep_provider_options = (value) ? my_strdup(value, MYF(0)) : NULL;
 }
 
+bool wsrep_reject_queries_update(sys_var *self, THD* thd, enum_var_type type)
+{
+    switch (wsrep_reject_queries) {
+        case WSREP_REJECT_NONE:
+            WSREP_INFO("Allowing client queries due to manual setting");
+            break;
+        case WSREP_REJECT_ALL:
+            WSREP_INFO("Rejecting client queries due to manual setting");
+            break;
+        case WSREP_REJECT_ALL_KILL:
+            wsrep_close_client_connections(FALSE);
+            WSREP_INFO("Rejecting client queries and killing connections due to manual setting");
+            break;
+        default:
+          WSREP_INFO("Unknown value for wsrep_reject_queries: %lu",
+                     wsrep_reject_queries);
+            return true;
+    }
+    return false;
+}
+
 static int wsrep_cluster_address_verify (const char* cluster_address_str)
 {
   /* There is no predefined address format, it depends on provider. */
@@ -511,28 +533,31 @@ bool wsrep_desync_check (sys_var *self, THD* thd, set_var* var)
                    ER_WRONG_VALUE_FOR_VAR,
                    "'wsrep_desync' is already OFF.");
     }
+    return false;
   }
-  return 0;
-}
-
-bool wsrep_desync_update (sys_var *self, THD* thd, enum_var_type type)
-{
   wsrep_status_t ret(WSREP_WARNING);
-  if (wsrep_desync) {
+  if (new_wsrep_desync) {
     ret = wsrep->desync (wsrep);
     if (ret != WSREP_OK) {
-      WSREP_WARN ("SET desync failed %d for %s", ret, thd->query());
+      WSREP_WARN ("SET desync failed %d for schema: %s, query: %s", ret,
+                  (thd->db ? thd->db : "(null)"), WSREP_QUERY(thd));
       my_error (ER_CANNOT_USER, MYF(0), "'desync'", thd->query());
       return true;
     }
   } else {
     ret = wsrep->resync (wsrep);
     if (ret != WSREP_OK) {
-      WSREP_WARN ("SET resync failed %d for %s", ret, thd->query());
+      WSREP_WARN ("SET resync failed %d for schema: %s, query: %s", ret,
+                  (thd->db ? thd->db : "(null)"), WSREP_QUERY(thd));
       my_error (ER_CANNOT_USER, MYF(0), "'resync'", thd->query());
       return true;
     }
   }
+  return false;
+}
+
+bool wsrep_desync_update (sys_var *self, THD* thd, enum_var_type type)
+{
   return false;
 }
 
@@ -571,6 +596,8 @@ static const int          mysql_status_len  = 512;
 static void export_wsrep_status_to_mysql(THD* thd)
 {
   int wsrep_status_len, i;
+
+  wsrep_free_status(thd);
 
   thd->wsrep_status_vars = wsrep->stats_get(wsrep);
 

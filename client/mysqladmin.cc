@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -334,8 +334,6 @@ int main(int argc,char *argv[])
     free_defaults(save_argv);
     exit(ho_error);
   }
-  temp_argv= mask_password(argc, &argv);
-  temp_argc= argc;
 
   if (debug_info_flag)
     my_end_arg= MY_CHECK_ERROR | MY_GIVE_INFO;
@@ -347,6 +345,10 @@ int main(int argc,char *argv[])
     usage();
     exit(1);
   }
+
+  temp_argv= mask_password(argc, &argv);
+  temp_argc= argc;
+
   commands = temp_argv;
   if (tty_password)
     opt_password = get_tty_password(NullS);
@@ -549,8 +551,9 @@ static my_bool sql_connect(MYSQL *mysql, uint wait)
 
   for (;;)
   {
-    if (mysql_real_connect(mysql,host,user,opt_password,NullS,tcp_port,
-			   unix_port, CLIENT_REMEMBER_OPTIONS))
+    if (mysql_connect_ssl_check(mysql, host, user, opt_password, NullS,
+                                tcp_port, unix_port,
+                                CLIENT_REMEMBER_OPTIONS, opt_ssl_required))
     {
       mysql->reconnect= 1;
       if (info)

@@ -116,7 +116,7 @@ When one supplies long data for a placeholder:
 #include "sql_analyse.h"
 #include "sql_rewrite.h"
 #include "transaction.h"                        // trans_rollback_implicit
-
+#include "sql_audit.h"
 #include <algorithm>
 using std::max;
 using std::min;
@@ -3398,6 +3398,10 @@ bool Prepared_statement::prepare(const char *packet, uint packet_len)
   thd->stmt_arena= this;
 
   Parser_state parser_state;
+#ifndef EMBEDDED_LIBRARY
+  if (is_any_audit_plugin_active(thd))
+    parser_state.m_input.m_compute_digest= true;
+#endif
   if (parser_state.init(thd, thd->query(), thd->query_length()))
   {
     thd->restore_backup_statement(this, &stmt_backup);
@@ -3422,9 +3426,6 @@ bool Prepared_statement::prepare(const char *packet, uint packet_len)
   error= parse_sql(thd, & parser_state, NULL) ||
     thd->is_error() ||
     init_param_array(this);
-
-  thd->m_digest= parent_digest;
-  thd->m_statement_psi= parent_locker;
 
   lex->set_trg_event_type_for_tables();
 
@@ -3545,6 +3546,8 @@ bool Prepared_statement::prepare(const char *packet, uint packet_len)
       error |= thd->is_error();
     }
   }
+  thd->m_digest= parent_digest;
+  thd->m_statement_psi= parent_locker;
   DBUG_RETURN(error);
 }
 
@@ -3685,6 +3688,8 @@ reexecute:
   thd->push_reprepare_observer(stmt_reprepare_observer);
 
   error= execute(expanded_query, open_cursor) || thd->is_error();
+
+  thd->pop_reprepare_observer();
 #ifdef WITH_WSREP
   mysql_mutex_lock(&thd->LOCK_wsrep_thd);
   switch (thd->wsrep_conflict_state)
@@ -3701,8 +3706,6 @@ reexecute:
   }
   mysql_mutex_unlock(&thd->LOCK_wsrep_thd);
 #endif /* WITH_WSREP */
-
-  thd->pop_reprepare_observer();
 
   if ((sql_command_flags[lex->sql_command] & CF_REEXECUTION_FRAGILE) &&
       error && !thd->is_fatal_error && !thd->killed &&
@@ -3896,8 +3899,8 @@ Prepared_statement::swap_prepared_statement(Prepared_statement *copy)
   swap_variables(LEX_STRING, name, copy->name);
   /* Ditto */
   swap_variables(char *, db, copy->db);
+  std::swap(db_length, copy->db_length);
 
-  DBUG_ASSERT(db_length == copy->db_length);
   DBUG_ASSERT(param_count == copy->param_count);
   DBUG_ASSERT(thd == copy->thd);
   last_error[0]= '\0';
