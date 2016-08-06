@@ -261,6 +261,11 @@ Vendor:         %{mysql_vendor}
 
 Requires:       mysql-wsrep-server%{product_suffix}
 Requires:       mysql-wsrep-client%{product_suffix}
+%if 0%{?compatlib}
+Requires:       mysql-wsrep-libs-compat%{product_suffix}
+%else
+Requires:       mysql-wsrep-shared%{product_suffix}
+%endif
 
 %if %{defined previous_suffix}
 Obsoletes:      mysql-wsrep%{previous_suffix}
@@ -1500,6 +1505,10 @@ echo "====="                                     >> $STATUS_HISTORY
 # merging BK trees)
 ##############################################################################
 %changelog
+* Tue Nov 03 2015 Joerg Bruehe <joerg.bruehe@fromdual.com>
+- Let the meta RPM "require" "shared" or "libs-compat", so that it will
+  "obsolete" any pre-installed packages (expecially the client library).
+
 * Fri Oct 30 2015 Joerg Bruehe <joerg.bruehe@fromdual.com>
 - Combine "plugins.files" and "datadir.files" into one, it seems rpmbuild 4.4
   (used on SLES 11) cannot handle two "-f" directives for one "%%files" section.
