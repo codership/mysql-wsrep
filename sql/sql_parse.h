@@ -222,6 +222,14 @@ inline bool is_supported_parser_charset(const CHARSET_INFO *cs)
 }
 #ifdef WITH_WSREP
 
+/*
+  This is used in cases where at least one key is required by the API
+  but we don't actually want to add any key to the write set.
+  (A space is added to the end, with the intention that no one should
+  ever be able to create a real table with this name.)
+*/
+#define WSREP_NONEXISTANT_TABLE (char *)"nonexistant table "
+
 #define WSREP_MYSQL_DB (char *)"mysql"
 #define WSREP_TO_ISOLATION_BEGIN(db_, table_, table_list_)                   \
   if (WSREP(thd) && wsrep_to_isolation_begin(thd, db_, table_, table_list_)) goto error;

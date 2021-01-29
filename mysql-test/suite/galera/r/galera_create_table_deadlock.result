@@ -1,0 +1,17 @@
+SET GLOBAL wsrep_debug=ON;
+SET GLOBAL wsrep_sync_wait=0;
+SET GLOBAL wsrep_retry_autocommit=0;
+SET SESSION wsrep_sync_wait=0;
+CREATE TABLE t1 (f1 INTEGER) ENGINE=InnoDB;
+SET GLOBAL wsrep_provider_options = 'debug=1;dbug=d,local_monitor_enter_sync';
+CREATE TABLE IF NOT EXISTS t1 (f1 INTEGER) ENGINE=InnoDB;;
+INSERT INTO t1 VALUES (1);;
+SET GLOBAL wsrep_provider_options = 'dbug=';
+SET GLOBAL wsrep_provider_options = 'signal=local_monitor_enter_sync';
+SHOW STATUS LIKE 'wsrep_local_cert_failures';
+Variable_name	Value
+wsrep_local_cert_failures	0
+SET GLOBAL wsrep_retry_autocommit=1;
+SET GLOBAL wsrep_sync_wait=7;
+SET GLOBAL wsrep_debug=OFF;
+DROP TABLE t1;
