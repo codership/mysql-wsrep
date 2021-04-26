@@ -260,7 +260,7 @@ read_cnf()
         ekeyfile=$(parse_cnf sst encrypt-key-file "")
     fi
     rlimit=$(parse_cnf sst rlimit "")
-    uextra=$(parse_cnf sst use_extra 0)
+    uextra=$(parse_cnf sst use-extra 0)
 }
 
 get_stream()
