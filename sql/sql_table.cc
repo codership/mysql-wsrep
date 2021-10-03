@@ -5440,8 +5440,8 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST* src_table,
     } 
     else if (!is_tmp_table)
     {
-      /* this is straight CREATE TABLE LIKE... eith no tmp tables */
-      WSREP_TO_ISOLATION_BEGIN(table->db, table->table_name, NULL);
+      /* this is straight CREATE TABLE LIKE... with no tmp tables */
+      WSREP_TO_ISOLATION_BEGIN(table->db, WSREP_NONEXISTANT_TABLE, NULL);
     }
     else
     {
@@ -5464,7 +5464,7 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST* src_table,
       thd->wsrep_TOI_pre_query=     query.ptr();
       thd->wsrep_TOI_pre_query_len= query.length();
       
-      WSREP_TO_ISOLATION_BEGIN(table->db, table->table_name, NULL);
+      WSREP_TO_ISOLATION_BEGIN(table->db, WSREP_NONEXISTANT_TABLE, NULL);
 
       thd->wsrep_TOI_pre_query=      NULL;
       thd->wsrep_TOI_pre_query_len= 0;
