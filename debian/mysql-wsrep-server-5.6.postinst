@@ -74,19 +74,10 @@ case "$1" in
 
     # Ensure the existence and right permissions for the database and
     # log files.
-
-    # MySQL 5.6.34 needs this
-
-    if [ ! -d ${mysql_filesdir} -a ! -L ${mysql_filesdir} ];
-    then
-        mkdir ${mysql_filesdir}
-        chown mysql:mysql ${mysql_filesdir}
-        chmod 770 ${mysql_filesdir}
-    fi
-
     if [ ! -d "$mysql_statedir"       -a ! -L "$mysql_statedir"       ]; then mkdir "$mysql_statedir"; fi
     if [ ! -d "$mysql_statedir/mysql" -a ! -L "$mysql_statedir/mysql" ]; then mkdir "$mysql_statedir/mysql"; fi
     if [ ! -d "$mysql_logdir"         -a ! -L "$mysql_logdir"         ]; then mkdir "$mysql_logdir"; fi
+    if [ ! -d "$mysql_filesdir"       -a ! -L "$mysql_filesdir"       ]; then mkdir "$mysql_filesdir"; fi
     # When creating an ext3 jounal on an already mounted filesystem like e.g.
     # /var/lib/mysql, you get a .journal file that is not modifyable by chown.
     # The mysql_datadir must not be writable by the mysql user under any
@@ -98,6 +89,8 @@ case "$1" in
     if [ ! -d "$mysql_rundir" ]; then mkdir "$mysql_rundir"; fi
     chown -R mysql $mysql_rundir
     touch $mysql_logdir/error.log
+    chown -R mysql:mysql $mysql_filesdir
+    chmod 700 $mysql_filesdir
     chown -R mysql:adm $mysql_logdir
     chmod 0750 $mysql_logdir
     chmod 0640 $mysql_logdir/error.log

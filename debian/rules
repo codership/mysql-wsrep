@@ -28,11 +28,22 @@ EXPORTED_SOURCE_TARBALL := debian/mysql-source-5.6.tar.gz
 TESTSUITE_FAIL_CMD:=true
 TMP := $(CURDIR)/debian/tmp/
 USE_ASSEMBLER:=--enable-assembler
+NUMJOBS=$(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
 
+ifeq (,$(NUMJOBS))
+	NUMJOBS=1
+endif
+
+MAKEFLAGS += -j $(NUMJOBS)
 
 export MYSQL_BUILD_CC=$(DEB_HOST_GNU_TYPE)-gcc
 export MYSQL_BUILD_CXX=$(DEB_HOST_GNU_TYPE)-g++
 
+# The full upstream test suite takes a very long time to run, so we run
+# only the main test suite unless fulltest is specified.
+ifeq ($(findstring fulltest,$(DEB_BUILD_OPTIONS)),)
+    MTR_SUITE=--suite=main
+endif
 
 ifneq (,$(filter $(ARCH), i386 kfreebsd-i386 hurd-i386))
 	TAOCRYPT_OPT="-DTAOCRYPT_DISABLE_X86ASM"
@@ -110,18 +121,27 @@ configure-stamp configure-pic-stamp:
 
 override_dh_auto_build: build-stamp
 
-build-stamp:
+# $(EXPORTED_SOURCE_TARBALL) must be built before the builds commence, since
+# the builds change some of the files picked up by this tar invocation, and
+# this can race against tar with an error like "tar:
+# ./builddir-pic/strings/CMakeFiles/strings.dir: file changed as we read it".
+# So define the rule for building it here, and have the build rules depend on
+# it.
+$(EXPORTED_SOURCE_TARBALL):
+	GZIP=-n tar -zcf $(EXPORTED_SOURCE_TARBALL) \
+	    --exclude=debian . \
+	    --transform="s,^\./,mysql-5.6/,"
+
+build-stamp: $(EXPORTED_SOURCE_TARBALL)
 	@echo "RULES.$@"
-	[ -f $(EXPORTED_SOURCE_TARBALL) ] || tar -zcf $(EXPORTED_SOURCE_TARBALL) \
-	--exclude=debian . \
-	--transform="s,^\./,mysql-5.6/,"
 	cd $(builddir) && $(MAKE)
 	touch $@
 
-build-pic-stamp:
+build-pic-stamp: $(EXPORTED_SOURCE_TARBALL)
 	# Don't call this section from dh_auto_build as
 	# linmysqld does not exsist in mysql-wsrep
 	@echo "RULES.$@"
+	cd $(builddir) && $(MAKE) -C sql
 	cd $(builddir) && $(MAKE) -C scripts
 	cd $(builddir) && $(MAKE) -C libmysqld
 	touch $@
@@ -129,11 +149,18 @@ build-pic-stamp:
 override_dh_auto_test:
 	@echo "RULES.$@"
 ifeq ($(findstring nocheck,$(DEB_BUILD_OPTIONS)),)
-	cp unittest/unit.pl $(builddir)/unittest/
 	cp -r mysql-test/* $(builddir)/mysql-test/
 	cp -r sql/share/* $(builddir)/sql/share/
 	cp -r scripts/*sql $(builddir)/scripts/
-	cd $(builddir) && $(MAKE) $(MAKE_TEST_TARGET) || $(TESTSUITE_FAIL_CMD) ;
+ifeq ($(ARCH_OS),hurd)
+	# Tests not fully working under Hurd, see
+	# http://bugs.mysql.com/bug.php?id=64685. Run unit tests only.
+	cd $(builddir) && $(MAKE) test || $(TESTSUITE_FAIL_CMD) ;
+else
+	# Skip replication tests since they are timing sensitive and may
+	# result in false positives.
+	cd $(builddir)/mysql-test && ./mtr --parallel=$(NUMJOBS) --skip-rpl $(MTR_SUITE) || $(TESTSUITE_FAIL_CMD) ;
+endif
 endif
 
 override_dh_auto_install: auto_install-stamp
@@ -144,6 +171,14 @@ auto_install-stamp:
 	dh_testroot
 	# make install (trailing slash needed for innobase)
 	cd $(builddir) && $(MAKE) install DESTDIR=$(TMP)/
+	# After installing, remove rpath to make lintian happy.
+	set +e; \
+	find ./debian/tmp/ -type f -print0 \
+		| xargs -0 --no-run-if-empty chrpath -k 2>/dev/null \
+		| fgrep RPATH= \
+		| cut -d: -f 1 \
+		| xargs --no-run-if-empty chrpath -d; \
+	set -e
 	# install libmysqld built with -FPIC
 	install -d -m 0755 -o root -g root $(TMP)/usr/lib/mysql
 	# linmysqld does not exsist in mysql-wsrep
@@ -155,7 +190,7 @@ auto_install-stamp:
 	nm -n $(BUILDDIR)/sql/mysqld |gzip -9 > $(TMP)/usr/share/doc/mysql-server-5.6/mysqld.sym.gz
 	install -m 0644 support-files/wsrep.cnf $(TMP)/usr/share/mysql
 	# This seems to be the only safe place to fix permissions issues
-        # not handled by dh_fixperms.
+	# not handled by dh_fixperms.
 	mkdir -p $(TMP)/etc/mysql/conf.d/
 	touch $(TMP)/etc/mysql/conf.d/.keepme
 	install -D -m 0755 $(builddir)/support-files/mysql.server $(TMP)/etc/init.d/mysql
@@ -165,6 +200,7 @@ auto_install-stamp:
 	install -m 0644 debian/additions/mysql_config_pic.1 $(TMP)/usr/share/man/man1
 	install -m 0644 debian/additions/mysql_embedded.1 $(TMP)/usr/share/man/man1
 	install -m 0644 debian/additions/debian_create_root_user.sql $(TMP)/usr/share/mysql/
+	install -m 0755 debian/additions/mysql-systemd-start $(TMP)/usr/share/mysql/
 	# install AppArmor profile
 	install -D -m 644 debian/apparmor-profile $(TMP)/etc/apparmor.d/usr.sbin.mysqld
 	chmod 0755 $(TMP)/usr/share/mysql-test/std_data/checkDBI_DBD-mysql.pl
@@ -172,6 +208,10 @@ auto_install-stamp:
 	install -D -m 644 debian/mysql-server-5.6.py $(TMP)/usr/share/apport/package-hooks/source_mysql-5.6.py
 	# chmod 0644 $(TMP)/usr/share/mysql/*.ini
 	chmod 0644 $(TMP)/usr/bin/mysqlaccess.conf
+	chmod 0644 $(TMP)/usr/share/mysql-test/suite/innodb_stress/include/innodb_stress.inc
+	chmod 0644 $(TMP)/usr/share/mysql-test/suite/innodb_stress/t/load_generator.py
+	chmod 0644 $(TMP)/usr/share/mysql-test/suite/innodb_stress/t/*.test
+	chmod 0644 $(TMP)/usr/share/mysql-test/suite/innodb_stress/t/*.opt
 	touch $@
 
 # Use the --fail-missing to check for stuff that we should be installing
@@ -209,12 +249,22 @@ auto_install-stamp:
 
 override_dh_installlogrotate-arch:
 	dh_installlogrotate --name mysql-server
+
+override_dh_install:
+	dh_install
 	dh_apparmor -pmysql-server-5.6 --profile-name=usr.sbin.mysqld
+
+override_dh_installchangelogs:
+	dh_installchangelogs Docs/ChangeLog
+
+override_dh_systemd_enable:
+	dh_systemd_enable --name=mysql --no-enable
 
 # Start mysql in runlevel 19 before 20 where apache, proftpd etc gets
 # started which might depend on a running database server.
 override_dh_installinit-arch:
 	dh_installinit --name=mysql -- defaults 19 21
+	#dh_systemd_start --restart-after-upgrade
 
 override_dh_installcron-arch:
 	dh_installcron --name mysql-server
@@ -228,4 +278,4 @@ get-orig-source:
 	uscan --force-download --verbose
 
 %:
-	dh $@ --parallel
+	dh $@ --parallel --with systemd
