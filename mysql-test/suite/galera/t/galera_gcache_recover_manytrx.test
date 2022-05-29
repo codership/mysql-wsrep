@@ -3,6 +3,10 @@
 # restore the cluster and expect that node #2 will rejoin using IST
 #
 
+# The GCache rolls over too fast with optimized build and IST
+# does not happen as required. Skip the test with release builds
+# to avoid having huge gcaches.
+--source include/have_debug.inc
 --source include/galera_cluster.inc
 --source include/big_test.inc
 --source include/have_log_bin.inc

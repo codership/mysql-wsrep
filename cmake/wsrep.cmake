@@ -16,7 +16,8 @@
 # We need to generate a proper spec file even without --with-wsrep flag,
 # so WSREP_VERSION is produced regardless
 
-OPTION(WITH_WSREP "WSREP replication API (to use, e.g. Galera Replication library)" OFF)
+OPTION(WITH_WSREP
+  "WSREP replication API (to use, e.g. Galera Replication library)" ON)
 
 IF (NOT WITH_WSREP)
   RETURN()

@@ -3,6 +3,9 @@
 # proceeds very slowly due to extra SLEEP() in a trigger
 #
 
+# The test is quite flaky with release build, so run it only
+# with debug.
+--source include/have_debug.inc
 --source include/no_ps_protocol.inc
 --source include/galera_cluster.inc
 
