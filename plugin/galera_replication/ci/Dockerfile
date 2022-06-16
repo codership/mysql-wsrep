@@ -25,7 +25,17 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update -y && apt-get upgrade -y
 
 # General build tools
-RUN apt-get install -y cmake make g++ ccache git
+RUN apt-get install -y cmake make g++ ccache git curl
+# OpenSSL
+RUN curl -O -L \
+  https://github.com/openssl/openssl/archive/refs/tags/OpenSSL_1_1_1o.tar.gz &&\
+  mkdir openssl && \
+  tar xf OpenSSL_1_1_1o.tar.gz --strip-components=1 -C openssl && \
+  (cd openssl && \
+   ./config --prefix=/usr/local/openssl --openssldir=/usr/local/openssl && \
+   make -j$(nproc --all) && \
+   make install) && \
+   rm -r openssl
 # Galera build deps
 RUN apt-get install -y check libboost-program-options-dev
 # MySQL build deps

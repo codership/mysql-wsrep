@@ -41,6 +41,7 @@ cmake -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_CXX_COMPILER=/usr/lib/ccache/g++ \
       -DWITH_BOOST=/var/tmp \
       -DDOWNLOAD_BOOST=1 \
+      -DWITH_SSL=/usr/local/openssl \
       -DWITH_GALERA:BOOL=ON \
       -DGALERA_GIT_REPOSITORY="${GALERA_GIT_REPOSITORY}" \
       -DGALERA_BRANCH="${GALERA_BRANCH}" \
