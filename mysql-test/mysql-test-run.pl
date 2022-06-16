@@ -3861,7 +3861,8 @@ sub check_wsrep_support() {
       }
     } elsif (defined $ENV{'WSREP_PROVIDER'}) {
       my $garbd_file = dirname($ENV{'WSREP_PROVIDER'})."/garb/garbd";
-      my $mtr_garbd_exe = mtr_file_exists($garbd_file);
+      my $mtr_garbd_exe = mtr_file_exists($garbd_file,
+                                         "$basedir/bin/garbd");
       if ($mtr_garbd_exe ne "") {
         $ENV{'MTR_GARBD_EXE'} = $mtr_garbd_exe
       }
