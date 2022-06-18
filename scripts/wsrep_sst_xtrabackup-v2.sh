@@ -76,7 +76,7 @@ ssl_dhparams=""
 ssl_cert=""
 ssl_ca=""
 ssl_key=""
-ssl_mode="DISABLED"
+ssl_mode="unset"
 
 readonly SECRET_TAG="secret"
 JOINER_PID_FILE=""
@@ -513,15 +513,22 @@ read_cnf()
     # Pull the parameters needed for encrypt=4
     if [ -z "$tca" -a -z "$tkey" -a -z "$tcert" ]
     then # check for new configuration
-        ssl_mode=$(parse_cnf sst ssl-mode "DISABLED" | tr [:lower:] [:upper:])
-        check_server_ssl_config "sst" $ssl_mode
-        if [ -z "$ssl_ca" -a -z "$ssl_key" -a -z "$ssl_cert" ]
-        then # no new-style SSL config in [sst], try server-wide SSL config
-            check_server_ssl_config "mysqld.$WSREP_SST_OPT_CONF_SUFFIX" "$ssl_mode"
+        ssl_mode=$(parse_cnf sst ssl-mode "unset" | tr [:lower:] [:upper:])
+        if [ "$ssl_mode" != "DISABLED" ]
+        then
+            check_server_ssl_config "sst" "$ssl_mode"
             if [ -z "$ssl_ca" -a -z "$ssl_key" -a -z "$ssl_cert" ]
-            then
-               check_server_ssl_config "mysqld" "$ssl_mode"
+            then # no new-style SSL config in [sst], try server-wide SSL config
+                check_server_ssl_config "mysqld.$WSREP_SST_OPT_CONF_SUFFIX" "$ssl_mode"
+                if [ -z "$ssl_ca" -a -z "$ssl_key" -a -z "$ssl_cert" ]
+                then
+                    check_server_ssl_config "mysqld" "$ssl_mode"
+                fi
             fi
+        else
+            ssl_ca=""
+            ssl_key=""
+            ssl_cert=""
         fi
     fi
 
