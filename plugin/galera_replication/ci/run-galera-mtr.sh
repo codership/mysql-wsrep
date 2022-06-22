@@ -34,7 +34,7 @@ error()
 BUILD_DIR=${BUILD_DIR:-"build_debug"}
 GALERA_MTR_SUITES=${GALERA_MTR_SUITES:-"galera,galera_3nodes,wsrep"}
 
-export MTR_PARALLEL=${MTR_PARALLEL:-8}
+export MTR_PARALLEL=${MTR_PARALLEL:-"auto"}
 export MTR_PORT_GROUP_SIZE=50
 
 root_dir=$(cd $(dirname $0)/../../.. ; pwd -P)
