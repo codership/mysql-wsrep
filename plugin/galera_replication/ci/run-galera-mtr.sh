@@ -32,8 +32,9 @@ error()
 }
 
 BUILD_DIR=${BUILD_DIR:-"build_debug"}
+GALERA_MTR_SUITES=${GALERA_MTR_SUITES:-"galera,galera_3nodes,wsrep"}
 
-export MTR_PARALLEL=8
+export MTR_PARALLEL=${MTR_PARALLEL:-8}
 export MTR_PORT_GROUP_SIZE=50
 
 root_dir=$(cd $(dirname $0)/../../.. ; pwd -P)
@@ -53,7 +54,7 @@ then
 fi
 
 ./mtr --mysqld=--plugin-dir="${BUILD_DIR}"/lib/plugin \
-      --suites=galera,galera_3nodes,wsrep \
+      --suites="${GALERA_MTR_SUITES}" \
       --testcase-timeout=15 --big-test \
       --max-test-fail=0 --force --max-save-core=1 \
       --retry=3 --report-unstable-tests \

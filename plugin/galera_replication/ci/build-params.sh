@@ -24,25 +24,23 @@
 
 set -eux
 
-cur_dir="$(cd $(dirname $0); pwd -P)"
-. "${cur_dir}"/build-params.sh
+GALERA_GIT_REPOSITORY=${GALERA_GIT_REPOSITORY:-"https://github.com/codership/galera.git"}
+GALERA_BRANCH=${GALERA_BRANCH:-"3.x"}
 
-root_dir="$(cd $(dirname $0)/../../.. ; pwd -P)"
+CC=${CC:-/usr/lib/ccache/gcc}
+CXX=${CXX:-/usr/lib/ccache/g++}
+COMMON_CMAKE_OPTIONS="-DCMAKE_COLOR_MAKEFILE:BOOL=OFF
+                      -DCMAKE_C_COMPILER=${CC}
+                      -DCMAKE_CXX_COMPILER=${CXX}
+                      -DWITH_BOOST=/var/tmp
+                      -DDOWNLOAD_BOOST=1
+                      -DWITH_SSL=/usr/local/openssl
+                      -DWITH_GALERA:BOOL=ON
+                      -DGALERA_GIT_REPOSITORY=${GALERA_GIT_REPOSITORY}
+                      -DGALERA_BRANCH=${GALERA_BRANCH}
+                      -DINSTALL_LAYOUT=STANDALONE
+                      -DWITH_ZLIB=bundled
+                      -DWITH_LIBEVENT=bundled
+                      -DWITH_EDLITLINE=bundled
+                      -DWITH_EXTRA_CHARSETS=all"
 
-SOURCE_DIR=${SOURCE_DIR:-"${root_dir}"}
-BUILD_DIR=${BUILD_DIR:-"build_debug"}
-
-cd "${root_dir}"
-mkdir -p "${BUILD_DIR}"
-cd "${BUILD_DIR}"
-cmake -DCMAKE_BUILD_TYPE=Debug \
-      -DPACKAGE_SUFFIX="-galera-${GALERA_BRANCH/\//_}-debug" \
-      -DWITH_DEBUG:BOOL=ON \
-      ${COMMON_CMAKE_OPTIONS} \
-      $@ \
-      "${SOURCE_DIR}"
-make -j$(nproc --all)
-
-if [ -z "${SKIP_PACKAGE:-}" ]; then
-    make package
-fi
