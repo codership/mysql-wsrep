@@ -7379,10 +7379,14 @@ lock_trx_handle_wait(
 	dberr_t	err;
 
 #ifdef WITH_WSREP
-        if (trx->wsrep_killed_by_query == 0) {
+        /* check if this function is called by applier doing BF abort for this victim,
+         * or by the trx himself (and may just have marked as BF victim)
+         */
+        bool is_bf_abort= trx->wsrep_killed_by_query != 0 && trx->mysql_thd != current_thd;
+        /* BF aborter has already lock_sys mutex locked, we want to skip double mutex locking */
+        if (!is_bf_abort) {
 #endif /* WITH_WSREP */
 	lock_mutex_enter();
-
 	trx_mutex_enter(trx);
 #ifdef WITH_WSREP
         }
@@ -7399,7 +7403,7 @@ lock_trx_handle_wait(
 	}
 
 #ifdef WITH_WSREP
-        if (trx->wsrep_killed_by_query == 0) {
+        if (!is_bf_abort) {
 #endif /* WITH_WSREP */
 	lock_mutex_exit();
 
