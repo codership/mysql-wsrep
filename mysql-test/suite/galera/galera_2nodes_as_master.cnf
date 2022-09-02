@@ -8,6 +8,9 @@
 [mysqld]
 default-storage-engine=InnoDB
 
+# disable wsrep watchdog for testing
+innodb-wsrep-applier-lock-wait-timeout=0
+
 [mysqld.1]
 server-id=1
 binlog-format=row

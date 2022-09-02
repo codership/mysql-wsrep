@@ -1606,6 +1606,12 @@ loop:
 
 	os_event_wait_time_low(srv_monitor_event, 5000000, sig_count);
 
+#ifdef WITH_WSREP
+	if (innodb_wsrep_applier_lock_wait_timeout) {
+		wsrep_run_BF_lock_wait_watchdog();
+	}
+#endif /* WITH_WSREP */
+
 	current_time = ut_time_monotonic();
 
 	time_elapsed = current_time - last_monitor_time;

@@ -334,7 +334,19 @@ lock_wait_suspend_thread(
 		thd_wait_begin(trx->mysql_thd, THD_WAIT_TABLE_LOCK);
 	}
 
+#ifdef WITH_WSREP
+	if (wsrep_thd_is_BF(trx->mysql_thd, false)) {
+		os_atomic_increment_ulint(&wsrep_BF_waiting_count, 1);
+	}
+#endif /* WITH_WSREP */
+
 	os_event_wait(slot->event);
+
+#ifdef WITH_WSREP
+	if (wsrep_thd_is_BF(trx->mysql_thd, false)) {
+		os_atomic_decrement_ulint(&wsrep_BF_waiting_count, 1);
+	}
+#endif /* WITH_WSREP */
 
 	thd_wait_end(trx->mysql_thd);
 

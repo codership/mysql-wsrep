@@ -21050,6 +21050,21 @@ wsrep_fake_trx_id(
 	(void)wsrep_ws_handle_for_trx(wsrep_thd_ws_handle(thd), trx_id);
 }
 
+static MYSQL_SYSVAR_UINT(
+  wsrep_applier_lock_wait_timeout,
+  innodb_wsrep_applier_lock_wait_timeout,
+  PLUGIN_VAR_RQCMDARG,
+  "Number of seconds an applier is allowed to wait for lock acquired"
+  " by locally executing transactions. When this threshold is"
+  " reached, we attempt to force kill all local transactions that"
+  " prevent the applier to continue its execution."
+  " Value 0 disables this feature.",
+  0,  /* check function */
+  0,  /* update function */
+  INNODB_WSREP_APPLIER_LOCK_WAIT_TIMEOUT_DEFAULT,
+  0,        /* minimum value */
+  UINT_MAX, /* maximum value */
+  0);
 #endif /* WITH_WSREP */
 /* plugin options */
 
@@ -22214,6 +22229,9 @@ static struct st_mysql_sys_var* innobase_system_variables[]= {
   MYSQL_SYSVAR(master_thread_disabled_debug),
   MYSQL_SYSVAR(sync_debug),
 #endif /* UNIV_DEBUG */
+#ifdef WITH_WSREP
+  MYSQL_SYSVAR(wsrep_applier_lock_wait_timeout),
+#endif /* WITH_WSREP */
   NULL
 };
 

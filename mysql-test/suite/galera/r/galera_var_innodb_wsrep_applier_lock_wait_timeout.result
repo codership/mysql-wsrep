@@ -1,0 +1,12 @@
+CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=InnoDB;
+SET SESSION wsrep_sync_wait = 0;
+SET GLOBAL debug = '+d,wsrep_innodb_skip_kill_victim';
+START TRANSACTION;
+INSERT INTO t1 VALUES (1);
+INSERT INTO t1 VALUES (1);
+SET GLOBAL debug = '-d,wsrep_innodb_skip_kill_victim';
+SET GLOBAL innodb_wsrep_applier_lock_wait_timeout = 1;
+SET GLOBAL innodb_wsrep_applier_lock_wait_timeout = 0;
+COMMIT;
+ERROR 40001: Deadlock found when trying to get lock; try restarting transaction
+DROP TABLE t1;

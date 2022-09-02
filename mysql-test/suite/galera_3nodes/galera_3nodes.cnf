@@ -16,6 +16,9 @@ innodb_autoinc_lock_mode=2
 
 wsrep_node_address=127.0.0.1
 
+# disable wsrep watchdog for testing
+innodb-wsrep-applier-lock-wait-timeout=0
+
 [mysqld.1]
 wsrep_cluster_address='gcomm://'
 wsrep_provider_options='base_port=@mysqld.1.#galera_port;evs.suspect_timeout=PT10S;evs.inactive_timeout=PT30S;evs.install_timeout=PT15S'

@@ -413,6 +413,16 @@ wsrep_trx_print_locking(
 	ulint		max_query_len)	/*!< in: max query length to print,
 					or 0 to use the default max length */
 	MY_ATTRIBUTE((nonnull));
+
+#define INNODB_WSREP_APPLIER_LOCK_WAIT_TIMEOUT_DEFAULT 5
+extern uint innodb_wsrep_applier_lock_wait_timeout;
+/* Count of wsrep BF threads waiting for a lock. */
+extern ulint wsrep_BF_waiting_count;
+/** Checks if wsrep BF transactions have been waiting for lock for too
+long time and attempts to kill local transactions to release BF thread
+lock wait. */
+void wsrep_run_BF_lock_wait_watchdog();
+
 #endif /* WITH_WSREP */
 /**********************************************************************//**
 Prints info about a transaction.

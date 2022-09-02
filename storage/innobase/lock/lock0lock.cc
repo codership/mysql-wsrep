@@ -1262,6 +1262,8 @@ wsrep_kill_victim(const trx_t * const trx, const lock_t *lock) {
         ut_ad(lock_mutex_own());
         ut_ad(trx_mutex_own(lock->trx));
 
+	DBUG_EXECUTE_IF("wsrep_innodb_skip_kill_victim", return;);
+
 	/* quit for native mysql */
 	if (!wsrep_on(trx->mysql_thd)) return;
 
@@ -8138,3 +8140,189 @@ lock_trx_alloc_locks(trx_t* trx)
 	}
 
 }
+#ifdef WITH_WSREP
+/*
+  Wsrep BF watchdog implementation:
+
+  We use InnoDB monitor thread to call wsrep_run_BF_lock_wait_watchdog()
+  periodically to check if there are applier threads hanging in
+  lock wait. If the lock wait has taken more than 5 seconds, the
+  potential local blocking transactions are killed until the
+  applier thread is released.
+ */
+
+/** Helper macro to log only if wsrep_log_conflicts is enabled. */
+#define WSREP_LOCK_WD_LOG(msg) \
+  if (wsrep_log_conflicts) ib::info() << msg
+
+/** Find possibly blocking trx. */
+static trx_t *wsrep_find_blocking_trx(const trx_t *bf_trx)
+{
+  ut_ad(lock_mutex_own());
+  const lock_t* wait_lock = bf_trx->lock.wait_lock;
+  if (!wait_lock)
+  {
+    return 0;
+  }
+
+  ulint space = wait_lock->space();
+  ulint page_no = wait_lock->page_number();
+  hash_table_t* lock_hash = wait_lock->hash_table();
+
+  lock_t *lock;
+  for (lock = lock_rec_get_first_on_page_addr(lock_hash, space, page_no);
+       lock != NULL && lock->trx != bf_trx;
+       lock = lock_rec_get_next_on_page(lock)) {
+    trx_t *blocking_trx = 0;
+    trx_mutex_enter(lock->trx);
+    if (!wsrep_thd_is_BF(lock->trx->mysql_thd, FALSE))
+    {
+      blocking_trx = lock->trx;
+    }
+    trx_mutex_exit(lock->trx);
+    if (blocking_trx)
+    {
+      return blocking_trx;
+    }
+  }
+  return 0;
+}
+
+/** Kill one blocking transaction for BF transaction. Only local
+transactions are killed, i.e. other than BF and system transactions.
+@param[in] bf_trx BF transaction.
+@param[in] blocking_trx Blocking transaction.
+ */
+static void wsrep_lock_kill_one_blocking(const trx_t *bf_trx,
+                                         trx_t *blocking_trx) {
+  ut_ad(lock_mutex_own());
+  ut_ad(trx_sys_mutex_own());
+
+  trx_mutex_enter(blocking_trx);
+  if (blocking_trx->internal) {
+    WSREP_LOCK_WD_LOG("Blocking trx " << blocking_trx->id << " is system trx");
+  } else if (wsrep_thd_is_BF(blocking_trx->mysql_thd, false)) {
+    WSREP_LOCK_WD_LOG("Blocking trx " << blocking_trx->id << " is BF");
+  } else {
+    if (wsrep_innobase_kill_one_trx(bf_trx->mysql_thd, bf_trx, blocking_trx,
+                                    true)) {
+      WSREP_LOCK_WD_LOG("Blocking trx " << blocking_trx->id
+                        << " could not be killed");
+    } else {
+      WSREP_LOCK_WD_LOG("Blocking trx " << blocking_trx->id << " killed");
+    }
+  }
+  trx_mutex_exit(blocking_trx);
+}
+
+/** Kill all transactions which may be blocking BF transaction.
+@param[in] bf_trx BF transaction. */
+static void wsrep_lock_kill_blocking(const trx_t *bf_trx) {
+  ut_ad(lock_mutex_own());
+  ut_ad(trx_sys_mutex_own());
+
+  trx_t *blocking_trx = wsrep_find_blocking_trx(bf_trx);
+  time_t wait_time = ut_difftime(ut_time(), bf_trx->lock.wait_started);
+
+  if (blocking_trx) {
+    /* Compose hit list and use it to kill transactions one by one. */
+    std::vector<trx_t *, ut_allocator<trx_t *> > hit_list;
+    WSREP_LOCK_WD_LOG("wsrep BF trx " << bf_trx->id << " has been waiting for "
+                      << wait_time
+                      << " seconds for a lock, attempting to kill local "
+                      << "blocking transactions");
+    WSREP_LOCK_WD_LOG("BF trx: ");
+    if (wsrep_log_conflicts) lock_trx_print_wait_and_mvcc_state(stderr, bf_trx);
+    /* Blocking transaction may be waiting for other trx, find the root
+       cause of the blockage. We use big hammer here and kill all blocking
+       local transactions in a way. */
+    for (; blocking_trx != 0;
+         blocking_trx = wsrep_find_blocking_trx(blocking_trx)) {
+      WSREP_LOCK_WD_LOG("Blocking trx: ");
+      if (wsrep_log_conflicts)
+        lock_trx_print_wait_and_mvcc_state(stderr, blocking_trx);
+      try {
+        hit_list.push_back(blocking_trx);
+      } catch (const std::bad_alloc&) {
+        ib::warn() << "WSREP: Failed to alloc memory for hit_list";
+      }
+    }
+    for (std::vector<trx_t *, ut_allocator<trx_t *> >::const_iterator
+           i = hit_list.begin();
+         i != hit_list.end(); ++i) {
+      trx_t *victim_trx = *i;
+      wsrep_lock_kill_one_blocking(bf_trx, victim_trx);
+    }
+  } else {
+    ib::warn() << "wsrep BF trx " << bf_trx->id << " has been waiting for "
+               << wait_time
+               << " seconds, but no trx is blocking";
+  }
+}
+
+ulint wsrep_BF_waiting_count = 0;
+uint innodb_wsrep_applier_lock_wait_timeout =
+    INNODB_WSREP_APPLIER_LOCK_WAIT_TIMEOUT_DEFAULT;
+
+void wsrep_run_BF_lock_wait_watchdog() {
+  if (wsrep_BF_waiting_count == 0) {
+    /* No BF threads waiting. */
+    return;
+  }
+
+  lock_mutex_enter();
+  /* Start timing after acquiring lock sys mutex. This function
+     is running in monitor thread, so time to acquire the latch is
+     not important. However, we want to know if the rest of the
+     iteration takes too much time as it keeps the latch the whole
+     time. */
+  time_t start_time = ut_time();
+  trx_sys_mutex_enter();
+
+  TrxListIterator trx_iter;
+  std::vector<const trx_t *, ut_allocator<const trx_t *> > bf_waiters;
+
+  double max_wait_time = 0.;
+  for (const trx_t *trx = trx_iter.current(); trx != 0;
+       trx_iter.next(), trx = trx_iter.current()) {
+    if (wsrep_thd_is_BF(trx->mysql_thd, false) && trx->lock.wait_lock) {
+      const double timeout = innodb_wsrep_applier_lock_wait_timeout;
+      const double wait_time = ut_difftime(ut_time(), trx->lock.wait_started);
+      if (wait_time >= timeout) {
+        try {
+          bf_waiters.push_back(trx);
+        } catch (const std::bad_alloc&) {
+          ib::warn() << "WSREP: Failed to alloc memory for bf_waiters";
+        }
+      }
+      max_wait_time = std::max(max_wait_time, wait_time);
+    }
+  }
+
+  if (!bf_waiters.empty()) {
+    for (std::vector<const trx_t *, ut_allocator<const trx_t *> >
+           ::const_iterator
+           i = bf_waiters.begin();
+           i != bf_waiters.end(); ++i) {
+      const trx_t *trx = *i;
+      wsrep_lock_kill_blocking(trx);
+    }
+  }
+  trx_sys_mutex_exit();
+  lock_mutex_exit();
+
+  if (max_wait_time >= 60.) {
+    ib::warn() << "WSREP: BF lock wait long " << max_wait_time << " seconds";
+    srv_print_innodb_monitor = true;
+    srv_print_innodb_lock_monitor = true;
+    /* We are currently running in server monitor thread, no need to wake
+       up. */
+  }
+
+  time_t elapsed = ut_difftime(ut_time(), start_time);
+  if (elapsed >= 1) {
+    ib::warn() << "WSREP watchdog took " << elapsed
+               << " seconds to execute";
+  }
+}
+#endif /* WITH_WSREP */
