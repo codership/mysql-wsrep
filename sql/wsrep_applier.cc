@@ -280,8 +280,11 @@ wsrep_cb_status_t wsrep_apply_cb(void* const             ctx,
 #endif /* WSREP_PROC_INFO */
 
   /* tune FK and UK checking policy */
-  if (wsrep_slave_UK_checks == FALSE) 
+  if (wsrep_slave_UK_checks == FALSE)
+  {
+    WSREP_WARN("Disabling unique checks in replication applying is not safe with all use cases. wsrep_slave_UK_checks variable will be deprecated in future releases.");
     thd->variables.option_bits|= OPTION_RELAXED_UNIQUE_CHECKS;
+  }
   else
     thd->variables.option_bits&= ~OPTION_RELAXED_UNIQUE_CHECKS;
 
