@@ -8167,22 +8167,35 @@ static trx_t *wsrep_find_blocking_trx(const trx_t *bf_trx)
 
   ulint space = wait_lock->space();
   ulint page_no = wait_lock->page_number();
-  hash_table_t* lock_hash = wait_lock->hash_table();
+  ulint	heap_no = lock_rec_find_set_bit(wait_lock);
+  ulint	bit_offset = heap_no / 8;
+  ulint	bit_mask = static_cast<ulint>(1 << (heap_no % 8));
+
+  hash_table_t*   lock_hash = lock_hash_get(wait_lock->type_mode);
 
   lock_t *lock;
   for (lock = lock_rec_get_first_on_page_addr(lock_hash, space, page_no);
        lock != NULL && lock->trx != bf_trx;
        lock = lock_rec_get_next_on_page(lock)) {
-    trx_t *blocking_trx = 0;
+
+    /* skip possible conflict with another applier */
     trx_mutex_enter(lock->trx);
-    if (!wsrep_thd_is_BF(lock->trx->mysql_thd, FALSE))
+    if (wsrep_thd_is_BF(lock->trx->mysql_thd, FALSE))
     {
-      blocking_trx = lock->trx;
+      trx_mutex_exit(lock->trx);
+      continue;
     }
     trx_mutex_exit(lock->trx);
-    if (blocking_trx)
-    {
-      return blocking_trx;
+
+    /* following the strategy of lock_rec_has_to_wait_in_queue() */
+    const byte*	p = (const byte*) &lock[1];
+
+    if (heap_no < lock_rec_get_n_bits(lock)
+        && (p[bit_offset] & bit_mask)
+        && lock_has_to_wait(wait_lock, lock)
+        && !wsrep_thd_is_BF(lock->trx->mysql_thd, FALSE) ) {
+      /* returning the first blocking transaction, there could be more, though */
+      return lock->trx;
     }
   }
   return 0;
