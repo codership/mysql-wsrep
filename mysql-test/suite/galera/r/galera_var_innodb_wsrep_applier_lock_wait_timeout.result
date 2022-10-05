@@ -1,3 +1,6 @@
+************************************************************************
+* Phase 1,  BF abort for blocking local trx, after watchdog is launched
+************************************************************************
 CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=InnoDB;
 SET SESSION wsrep_sync_wait = 0;
 SET GLOBAL debug = '+d,wsrep_innodb_skip_kill_victim';
@@ -9,4 +12,31 @@ SET GLOBAL innodb_wsrep_applier_lock_wait_timeout = 1;
 SET GLOBAL innodb_wsrep_applier_lock_wait_timeout = 0;
 COMMIT;
 ERROR 40001: Deadlock found when trying to get lock; try restarting transaction
+DROP TABLE t1;
+******************************************************
+* Phase 2, non related trx should not be BF aborted
+*****************************************************
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (1,0);
+INSERT INTO t1 VALUES (2,0);
+INSERT INTO t1 VALUES (3,0);
+INSERT INTO t1 VALUES (4,0);
+BEGIN;
+UPDATE t1 SET f2=3 WHERE f1=4;
+SET GLOBAL debug = '+d,wsrep_innodb_skip_kill_victim';
+START TRANSACTION;
+UPDATE t1 SET f2=2 WHERE f1=2;
+UPDATE t1 SET f2=2 WHERE f1=2;
+SET GLOBAL debug = '-d,wsrep_innodb_skip_kill_victim';
+SET GLOBAL innodb_wsrep_applier_lock_wait_timeout = 1;
+SET GLOBAL innodb_wsrep_applier_lock_wait_timeout = 0;
+COMMIT;
+ERROR 40001: Deadlock found when trying to get lock; try restarting transaction
+COMMIT;
+SELECT * FROM t1;
+f1	f2
+1	0
+2	2
+3	0
+4	3
 DROP TABLE t1;
