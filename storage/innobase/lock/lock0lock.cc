@@ -887,7 +887,7 @@ lock_rec_has_to_wait(
 		/* if BF thread is locking and has conflict with another BF
 		   thread, we need to look at trx ordering and lock types */
 		if (wsrep_thd_is_BF(trx->mysql_thd, FALSE)         &&
-		    wsrep_thd_is_BF(lock2->trx->mysql_thd, TRUE)) {
+		    wsrep_thd_is_BF(lock2->trx->mysql_thd, FALSE)) {
 
 			if (wsrep_debug) {
 				fprintf(stderr, 
@@ -1732,9 +1732,10 @@ RecLock::create(
 		 * delayed conflict resolution '...kill_one_trx' was not called,
 		 * if victim was waiting for some other lock
 		 */
+		DBUG_EXECUTE_IF("wsrep_innodb_skip_kill_victim",
+				goto wsrep_debug_skip_c_lock;);
 		trx_mutex_enter(c_lock->trx);
 		if (c_lock->trx->lock.que_state == TRX_QUE_LOCK_WAIT) {
-
 			c_lock->trx->lock.was_chosen_as_deadlock_victim = TRUE;
 
 			if (wsrep_debug) wsrep_print_wait_locks(c_lock);
@@ -1774,6 +1775,9 @@ RecLock::create(
 			return(lock);
 		}
                 trx_mutex_exit(c_lock->trx);
+#ifdef UNIV_DEBUG
+ wsrep_debug_skip_c_lock:
+#endif /* UNIV_DEBUG */
                 /* we don't want to add to hash anymore, but need other updates from lock_add */
 		++lock->index->table->n_rec_locks;
                 lock_add(lock, false);
@@ -2402,7 +2406,7 @@ lock_rec_has_to_wait_in_queue(
 		    && lock_has_to_wait(wait_lock, lock)) {
 #ifdef WITH_WSREP
 			if (wsrep_thd_is_BF(wait_lock->trx->mysql_thd, FALSE) &&
-			    wsrep_thd_is_BF(lock->trx->mysql_thd, TRUE)) {
+			    wsrep_thd_is_BF(lock->trx->mysql_thd, FALSE)) {
 				/* don't wait for another BF lock */
 				continue;
 			}
@@ -8238,34 +8242,7 @@ static void wsrep_lock_kill_blocking(const trx_t *bf_trx) {
   time_t wait_time = ut_difftime(ut_time(), bf_trx->lock.wait_started);
 
   if (blocking_trx) {
-    /* Compose hit list and use it to kill transactions one by one. */
-    std::vector<trx_t *, ut_allocator<trx_t *> > hit_list;
-    WSREP_LOCK_WD_LOG("wsrep BF trx " << bf_trx->id << " has been waiting for "
-                      << wait_time
-                      << " seconds for a lock, attempting to kill local "
-                      << "blocking transactions");
-    WSREP_LOCK_WD_LOG("BF trx: ");
-    if (wsrep_log_conflicts) lock_trx_print_wait_and_mvcc_state(stderr, bf_trx);
-    /* Blocking transaction may be waiting for other trx, find the root
-       cause of the blockage. We use big hammer here and kill all blocking
-       local transactions in a way. */
-    for (; blocking_trx != 0;
-         blocking_trx = wsrep_find_blocking_trx(blocking_trx)) {
-      WSREP_LOCK_WD_LOG("Blocking trx: ");
-      if (wsrep_log_conflicts)
-        lock_trx_print_wait_and_mvcc_state(stderr, blocking_trx);
-      try {
-        hit_list.push_back(blocking_trx);
-      } catch (const std::bad_alloc&) {
-        ib::warn() << "WSREP: Failed to alloc memory for hit_list";
-      }
-    }
-    for (std::vector<trx_t *, ut_allocator<trx_t *> >::const_iterator
-           i = hit_list.begin();
-         i != hit_list.end(); ++i) {
-      trx_t *victim_trx = *i;
-      wsrep_lock_kill_one_blocking(bf_trx, victim_trx);
-    }
+      wsrep_lock_kill_one_blocking(bf_trx, blocking_trx);
   } else {
     ib::warn() << "wsrep BF trx " << bf_trx->id << " has been waiting for "
                << wait_time
