@@ -129,12 +129,17 @@ START TRANSACTION;
 UPDATE t1 SET f2=4 WHERE f1=2;
 --send UPDATE t1 SET f2=4 WHERE f1=4;
 
+--connection node_1_ctrl
+# Wait until the UPDATE gets blocked in InnoDB lock wait
+--let $wait_condition = SELECT COUNT(*) > 0 FROM sys.innodb_lock_waits
+--source include/wait_condition.inc
+
 --connection node_2
 UPDATE t1 SET f2=2 WHERE f1=2;
 
 --connection node_1_ctrl
 # Wait until the applier gets blocked in InnoDB lock wait
-# note: node_1 is also in wait state, so ther are two lock waiters atm
+# note: node_1 is also in wait state, so there are two lock waiters atm
 --let $wait_condition = SELECT COUNT(*) > 1 FROM sys.innodb_lock_waits
 --source include/wait_condition.inc
 # Sleep some and verify that the lock wait does not resolve by itself.
