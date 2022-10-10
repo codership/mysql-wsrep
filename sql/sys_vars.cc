@@ -5803,8 +5803,7 @@ static Sys_var_mybool Sys_wsrep_slave_FK_checks(
        "wsrep_slave_FK_checks", "Should slave thread do "
        "foreign key constraint checks",
        GLOBAL_VAR(wsrep_slave_FK_checks),
-       CMD_LINE(OPT_ARG), DEFAULT(TRUE), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-       ON_CHECK(0), ON_UPDATE(0), DEPRECATED_VAR(""));
+       CMD_LINE(OPT_ARG), DEFAULT(TRUE));
 
 static Sys_var_mybool Sys_wsrep_slave_UK_checks(
        "wsrep_slave_UK_checks", "Should applier thread do "
