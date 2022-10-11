@@ -5807,7 +5807,7 @@ static Sys_var_mybool Sys_wsrep_slave_FK_checks(
 
 static Sys_var_mybool Sys_wsrep_slave_UK_checks(
        "wsrep_slave_UK_checks", "Should applier thread do "
-       "secondary index uniqueness chesks. "
+       "secondary index uniqueness checks. "
         "This variable is deprecated and will be removed in a future release.",
         GLOBAL_VAR(wsrep_slave_UK_checks), 
         CMD_LINE(OPT_ARG), DEFAULT(TRUE), NO_MUTEX_GUARD, NOT_IN_BINLOG,
