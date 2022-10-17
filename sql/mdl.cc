@@ -2619,32 +2619,32 @@ MDL_lock::can_grant_lock(enum_mdl_type type_arg,
           if (ticket->get_ctx() != requestor_ctx &&
               ticket->is_incompatible_when_granted(type_arg))
 #ifdef WITH_WSREP
-        {
-          if (wsrep_thd_is_BF((void *)(requestor_ctx->wsrep_get_thd()),false) &&
-              key.mdl_namespace() == MDL_key::GLOBAL)
           {
-            WSREP_DEBUG("global lock granted for BF: %u %s",
-                        wsrep_thd_thread_id(requestor_ctx->wsrep_get_thd()), 
-                        wsrep_thd_query(requestor_ctx->wsrep_get_thd()));
-            can_grant = true;
-          }
-          else if (!wsrep_grant_mdl_exception(requestor_ctx, ticket, &key))
-          {
-            wsrep_can_grant= FALSE;
-            if (wsrep_log_conflicts) 
-	    {
-	      MDL_lock * lock = ticket->get_lock();
-              WSREP_INFO(
-                "MDL conflict db=%s table=%s ticket=%d solved by %s",
-                lock->key.db_name(), lock->key.name(), ticket->get_type(), "abort"
-             );
+            if (wsrep_thd_is_BF((void *)(requestor_ctx->wsrep_get_thd()),false) &&
+                key.mdl_namespace() == MDL_key::GLOBAL)
+            {
+              WSREP_DEBUG("global lock granted for BF: %u %s",
+                          wsrep_thd_thread_id(requestor_ctx->wsrep_get_thd()),
+                          wsrep_thd_query(requestor_ctx->wsrep_get_thd()));
+              can_grant= TRUE;
+            }
+            else if (!wsrep_grant_mdl_exception(requestor_ctx, ticket, &key))
+            {
+              wsrep_can_grant= false;
+              if (wsrep_log_conflicts)
+              {
+                MDL_lock * lock = ticket->get_lock();
+                WSREP_INFO(
+                  "MDL conflict db=%s table=%s ticket=%d solved by %s",
+                  lock->key.db_name(), lock->key.name(), ticket->get_type(), "abort"
+                );
+              }
+            }
+            else
+            {
+              can_grant= TRUE;
             }
           }
-          else
-          {	  
-            can_grant= TRUE;
-          }
-        }
 #else
             break;
 #endif /* WITH_WSREP */

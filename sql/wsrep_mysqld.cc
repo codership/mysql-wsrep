@@ -1839,7 +1839,8 @@ wsrep_grant_mdl_exception(const MDL_context *requestor_ctx,
                   granted_thd->wsrep_conflict_state);
       ticket->wsrep_report(wsrep_debug);
       mysql_mutex_unlock(&granted_thd->LOCK_wsrep_thd);
-      wsrep_abort_thd((void*)request_thd, (void*)granted_thd, 1);
+      if (granted_thd != current_thd)
+        wsrep_abort_thd((void*)request_thd, (void*)granted_thd, 1);
       ret = FALSE;
     }
     else if (granted_thd->wsrep_query_state == QUERY_COMMITTING)
@@ -1847,7 +1848,8 @@ wsrep_grant_mdl_exception(const MDL_context *requestor_ctx,
       WSREP_DEBUG("mdl granted, but commiting thd abort scheduled");
       ticket->wsrep_report(wsrep_debug);
       mysql_mutex_unlock(&granted_thd->LOCK_wsrep_thd);
-      wsrep_abort_thd((void*)request_thd, (void*)granted_thd, 1);
+      if (granted_thd != current_thd)
+        wsrep_abort_thd((void*)request_thd, (void*)granted_thd, 1);
       ret = FALSE;
     }
     else
@@ -1856,7 +1858,8 @@ wsrep_grant_mdl_exception(const MDL_context *requestor_ctx,
                     request_thd, granted_thd);
       ticket->wsrep_report(wsrep_debug);
       mysql_mutex_unlock(&granted_thd->LOCK_wsrep_thd);
-      wsrep_abort_thd((void*)request_thd, (void*)granted_thd, 1);
+      if (granted_thd != current_thd)
+        wsrep_abort_thd((void*)request_thd, (void*)granted_thd, 1);
       ret = FALSE;
     }
   }
