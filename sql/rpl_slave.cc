@@ -7967,17 +7967,6 @@ extern "C" void *handle_slave_sql(void *arg)
   if (thd_added)
     thd_manager->remove_thd(thd);
 
-  /*
-    The thd can only be destructed after indirect references
-    through mi->rli->info_thd are cleared: mi->rli->info_thd= NULL.
-
-    For instance, user thread might be issuing show_slave_status
-    and attempting to read mi->rli->info_thd->get_proc_info().
-    Therefore thd must only be deleted after info_thd is set
-    to NULL.
-  */
-  delete thd;
-
 #ifdef WITH_WSREP
   /* if slave stopped due to node going non primary, we set global flag to
      trigger automatic restart of slave when node joins back to cluster
@@ -7989,10 +7978,9 @@ extern "C" void *handle_slave_sql(void *arg)
       WSREP_INFO("Slave error due to node temporarily non-primary"
                  "SQL slave will continue");
       wsrep_node_dropped= FALSE;
-      mysql_mutex_unlock(&rli->run_lock);
       WSREP_DEBUG("wsrep_conflict_state now: %d", thd->wsrep_conflict_state);
       WSREP_INFO("slave restart: %d", thd->wsrep_conflict_state);
-      thd->wsrep_conflict_state = NO_CONFLICT;
+      delete thd;
       goto wsrep_restart_point;
     } else {
       WSREP_INFO("Slave error due to node going non-primary");
@@ -8002,14 +7990,16 @@ extern "C" void *handle_slave_sql(void *arg)
     }
   }
 #endif /* WITH_WSREP */
-/*
-  Note: the order of the broadcast and unlock calls below (first broadcast, then unlock)
-  is important. Otherwise a killer_thread can execute between the calls and
-  delete the mi structure leading to a crash! (see BUG#25306 for details)
- */ 
-  mysql_cond_broadcast(&rli->stop_cond);
-  DBUG_EXECUTE_IF("simulate_slave_delay_at_terminate_bug38694", sleep(5););
-  mysql_mutex_unlock(&rli->run_lock);  // tell the world we are done
+  /*
+    The thd can only be destructed after indirect references
+    through mi->rli->info_thd are cleared: mi->rli->info_thd= NULL.
+
+    For instance, user thread might be issuing show_slave_status
+    and attempting to read mi->rli->info_thd->get_proc_info().
+    Therefore thd must only be deleted after info_thd is set
+    to NULL.
+  */
+  delete thd;
 
   DBUG_LEAVE;                            // Must match DBUG_ENTER()
   my_thread_end();
