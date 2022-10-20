@@ -68,6 +68,7 @@ popd
 #
 if [[ ${BUILD_TYPE:-RelWithDebInfo} = RelWithDebInfo ]]; then
   CMAKE_EXTRA_OPTIONS+=' -DBUILD_CONFIG=mysql_release'
+  CMAKE_EXTRA_OPTIONS+=' -DWITH_INNODB_MEMCACHED=1'
 fi
 #
 /usr/local/bin/cmake ../ \
