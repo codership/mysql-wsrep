@@ -968,6 +968,29 @@ extern "C" const char *wsrep_thd_query(THD *thd)
 {
   return (thd) ? thd->query().str : NULL;
 }
+extern "C" const char *wsrep_thd_query_buf(THD *thd, char *buf, size_t buf_size)
+{
+  if (!thd)
+  {
+    buf[0]= '\0';
+    return buf;
+  }
+  mysql_mutex_lock(&thd->LOCK_thd_query);
+  const char* qstr= thd->query().str;
+  size_t qstr_length= thd->query().length;
+  if (qstr)
+  {
+    strncpy(buf, qstr, std::min(buf_size, qstr_length));
+    buf[std::min(buf_size - 1, qstr_length)]= '\0';
+  }
+  else
+  {
+    strncpy(buf, "(NULL)", std::min(buf_size, size_t(7)));
+  }
+  mysql_mutex_unlock(&thd->LOCK_thd_query);
+  buf[buf_size - 1]= '\0';
+  return buf;
+}
 extern "C" query_id_t wsrep_thd_wsrep_last_query_id(THD *thd) 
 {
   return thd->wsrep_last_query_id;

@@ -20753,8 +20753,11 @@ wsrep_innobase_kill_one_trx(void * const bf_thd_ptr,
  		    wsrep_thd_thread_id(thd),
 		    (long long)victim_trx->id);
 
+        char victim_query_buf[1024];
 	WSREP_DEBUG("Aborting query: %s", 
-		  (thd && wsrep_thd_query(thd)) ? wsrep_thd_query(thd) : "void");
+                    thd ? wsrep_thd_query_buf(
+                        thd, victim_query_buf,
+                        sizeof(victim_query_buf)) : "void");
 
 	wsrep_thd_LOCK(thd);
         DBUG_EXECUTE_IF("sync.wsrep_after_BF_victim_lock",

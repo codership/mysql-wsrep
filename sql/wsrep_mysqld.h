@@ -20,6 +20,7 @@
 #include "wsrep_api.h"
 typedef struct st_mysql_show_var SHOW_VAR;
 #include "rpl_gtid.h"
+#include "log.h" /* sql_print_information() */
 
 #define WSREP_UNDEFINED_TRX_ID ULLONG_MAX
 
@@ -191,6 +192,11 @@ extern "C" query_id_t wsrep_thd_query_id(THD *thd);
 extern "C" wsrep_trx_id_t wsrep_thd_next_trx_id(THD *thd);
 extern "C" wsrep_trx_id_t wsrep_thd_trx_id(THD *thd);
 extern "C" const char * wsrep_thd_query(THD *thd);
+/* Print THD query in buffer buf of size buf_size. This is a variant of
+   wsrep_thd_query() which is safe to call from a thread which is not the
+   owner of THD object. The query will be copied into buf. The return value
+   is a pointer to the beginning of the buf. */
+extern "C" const char *wsrep_thd_query_buf(THD *thd, char *buf, size_t buf_size);
 extern "C" query_id_t wsrep_thd_wsrep_last_query_id(THD *thd);
 extern "C" void wsrep_thd_set_wsrep_last_query_id(THD *thd, query_id_t id);
 extern "C" void wsrep_thd_awake(THD *thd, my_bool signal);
@@ -257,16 +263,19 @@ void WSREP_LOG(void (*fun)(const char* fmt, ...), const char* fmt, ...);
 #define WSREP_WARN(...)  WSREP_LOG(sql_print_warning,     ##__VA_ARGS__)
 #define WSREP_ERROR(...) WSREP_LOG(sql_print_error,       ##__VA_ARGS__)
 
-#define WSREP_LOG_CONFLICT_THD(thd, role)                                      \
-    WSREP_LOG(sql_print_information, 	                                       \
-      "%s: \n "       	                                                       \
-      "  THD: %u, mode: %s, state: %s, conflict: %s, seqno: %lld\n "           \
-      "  SQL: %s",							       \
-      role, wsrep_thd_thread_id(thd), wsrep_thd_exec_mode_str(thd),            \
-      wsrep_thd_query_state_str(thd),                                          \
-      wsrep_thd_conflict_state_str(thd), (long long)wsrep_thd_trx_seqno(thd),  \
-      wsrep_thd_query(thd)                                                     \
-    );
+static inline void WSREP_LOG_CONFLICT_THD(THD *thd, const char *role)
+{
+  char buf[1024];
+  WSREP_LOG(sql_print_information,
+            "%s: \n "
+            "  THD: %u, mode: %s, state: %s, conflict: %s, seqno: %lld\n "
+            "  SQL: %s",
+            role, wsrep_thd_thread_id(thd), wsrep_thd_exec_mode_str(thd),
+            wsrep_thd_query_state_str(thd),
+            wsrep_thd_conflict_state_str(thd),
+            (long long)wsrep_thd_trx_seqno(thd),
+            wsrep_thd_query_buf(thd, buf, sizeof(buf)));
+}
 
 #define WSREP_LOG_CONFLICT(bf_thd, victim_thd, bf_abort)		       \
   if (wsrep_debug || wsrep_log_conflicts)				       \

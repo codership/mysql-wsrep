@@ -2063,12 +2063,14 @@ lock_rec_add_to_queue(
                           wsrep_thd_trx_seqno(trx->mysql_thd) << " SQL: " <<
                           wsrep_thd_query(trx->mysql_thd);
                         trx_t* otrx = other_lock->trx;
+                        char otrx_query_buf[1024];
 			ib::info() << "WSREP other lock:\n BF:" <<
                           ((wsrep_thd_is_BF(otrx->mysql_thd, FALSE)) ? "BF" : "normal") << " exec: " <<
                           wsrep_thd_exec_mode(otrx->mysql_thd) << " conflict: " <<
                           wsrep_thd_conflict_state(otrx->mysql_thd) << " seqno: " <<
                           wsrep_thd_trx_seqno(otrx->mysql_thd) << " SQL: " <<
-                          wsrep_thd_query(otrx->mysql_thd);
+                          wsrep_thd_query_buf(otrx->mysql_thd, otrx_query_buf,
+                                              sizeof(otrx_query_buf));
 		}
 #else
 		ut_a(!other_lock);
@@ -5965,12 +5967,14 @@ lock_rec_queue_validate(
                           wsrep_thd_trx_seqno(impl_trx->mysql_thd) << " SQL: " <<
                           wsrep_thd_query(impl_trx->mysql_thd);
                         trx_t* otrx = other_lock->trx;
+                        char otrx_query_buf[1024];
 			ib::info() << "WSREP other lock:\n BF:" <<
                           ((wsrep_thd_is_BF(otrx->mysql_thd, FALSE)) ? "BF" : "normal")  << " exec: " <<
                           wsrep_thd_exec_mode(otrx->mysql_thd) << " conflict: " <<
                           wsrep_thd_conflict_state(otrx->mysql_thd) << " seqno: " <<
                           wsrep_thd_trx_seqno(otrx->mysql_thd) << " SQL: " <<
-                          wsrep_thd_query(otrx->mysql_thd);
+                          wsrep_thd_query_buf(otrx->mysql_thd, otrx_query_buf,
+                                              sizeof(otrx_query_buf));
                                 }
 
 				//ut_a(lock_rec_has_expl(
