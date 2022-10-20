@@ -3598,6 +3598,27 @@ static int init_thread_environment()
 #ifndef _WIN32
   pthread_attr_setscope(&connection_attrib, PTHREAD_SCOPE_SYSTEM);
 #endif
+#ifdef WITH_WSREP
+  mysql_mutex_init(key_LOCK_wsrep_ready,
+                   &LOCK_wsrep_ready, MY_MUTEX_INIT_FAST);
+  mysql_cond_init(key_COND_wsrep_ready, &COND_wsrep_ready);
+  mysql_mutex_init(key_LOCK_wsrep_sst,
+                   &LOCK_wsrep_sst, MY_MUTEX_INIT_FAST);
+  mysql_cond_init(key_COND_wsrep_sst, &COND_wsrep_sst);
+  mysql_mutex_init(key_LOCK_wsrep_sst_init,
+                   &LOCK_wsrep_sst_init, MY_MUTEX_INIT_FAST);
+  mysql_cond_init(key_COND_wsrep_sst_init, &COND_wsrep_sst_init);
+  mysql_mutex_init(key_LOCK_wsrep_rollback,
+                   &LOCK_wsrep_rollback, MY_MUTEX_INIT_FAST);
+  mysql_cond_init(key_COND_wsrep_rollback, &COND_wsrep_rollback);
+  mysql_mutex_init(key_LOCK_wsrep_replaying,
+                   &LOCK_wsrep_replaying, MY_MUTEX_INIT_FAST);
+  mysql_cond_init(key_COND_wsrep_replaying, &COND_wsrep_replaying);
+  mysql_mutex_init(key_LOCK_wsrep_slave_threads,
+                   &LOCK_wsrep_slave_threads, MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(key_LOCK_wsrep_desync,
+                   &LOCK_wsrep_desync, MY_MUTEX_INIT_FAST);
+#endif
 
   assert(! THR_THD_initialized);
   assert(! THR_MALLOC_initialized);
@@ -4746,27 +4767,6 @@ extern "C" void *handle_shutdown(void *arg)
     my_thread_end();
     my_thread_exit(0);
   }
-#ifdef WITH_WSREP
-  mysql_mutex_init(key_LOCK_wsrep_ready,
-                   &LOCK_wsrep_ready, MY_MUTEX_INIT_FAST);
-  mysql_cond_init(key_COND_wsrep_ready, &COND_wsrep_ready);
-  mysql_mutex_init(key_LOCK_wsrep_sst,
-                   &LOCK_wsrep_sst, MY_MUTEX_INIT_FAST);
-  mysql_cond_init(key_COND_wsrep_sst, &COND_wsrep_sst);
-  mysql_mutex_init(key_LOCK_wsrep_sst_init,
-                   &LOCK_wsrep_sst_init, MY_MUTEX_INIT_FAST);
-  mysql_cond_init(key_COND_wsrep_sst_init, &COND_wsrep_sst_init);
-  mysql_mutex_init(key_LOCK_wsrep_rollback,
-                   &LOCK_wsrep_rollback, MY_MUTEX_INIT_FAST);
-  mysql_cond_init(key_COND_wsrep_rollback, &COND_wsrep_rollback);
-  mysql_mutex_init(key_LOCK_wsrep_replaying,
-                   &LOCK_wsrep_replaying, MY_MUTEX_INIT_FAST);
-  mysql_cond_init(key_COND_wsrep_replaying, &COND_wsrep_replaying);
-  mysql_mutex_init(key_LOCK_wsrep_slave_threads,
-                   &LOCK_wsrep_slave_threads, MY_MUTEX_INIT_FAST);
-  mysql_mutex_init(key_LOCK_wsrep_desync,
-                   &LOCK_wsrep_desync, MY_MUTEX_INIT_FAST);
-#endif
   return 0;
 }
 
