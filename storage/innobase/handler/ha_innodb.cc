@@ -6610,6 +6610,9 @@ wsrep_innobase_mysql_sort(
 	unsigned int	buf_length)	/* in: total str buffer length */
 
 {
+	/* Identify binary key */
+	static uint16 const charset_bin = my_charset_bin.number;
+
 	CHARSET_INFO*		charset;
 	enum_field_types	mysql_tp;
 	int ret_length =	str_length;
@@ -6671,8 +6674,23 @@ wsrep_innobase_mysql_sort(
 				str_length, tmp_str, str_length, 0);
 			assert(tmp_length <= buf_length);
 			ret_length = tmp_length;
+
+			if (wsrep_protocol_version >= 4
+			    && charset_number != charset_bin) {
+				/* If the last byte of the string compares to a
+				 * pad character truncate it and all preceding
+				 * null bytes */
+				uchar const pad_char = charset->pad_char;
+				if (str[ret_length - 1] == pad_char) {
+					for (; ret_length > 0
+					    && (str[ret_length - 1] == pad_char
+					     || str[ret_length - 1] == 0x0);
+					    ret_length--) {
+					}
+				}
+			}
 		}
- 
+
 		break;
 	}
 	case MYSQL_TYPE_DECIMAL :
@@ -6694,8 +6712,10 @@ wsrep_innobase_mysql_sort(
 	case MYSQL_TYPE_ENUM :
 	case MYSQL_TYPE_SET :
 	case MYSQL_TYPE_GEOMETRY :
-		break;
-	default:
+	case MYSQL_TYPE_TIMESTAMP2 :
+	case MYSQL_TYPE_DATETIME2 :
+	case MYSQL_TYPE_TIME2 :
+	case MYSQL_TYPE_JSON :
 		break;
 	}
 
@@ -7056,7 +7076,7 @@ wsrep_store_key_val_for_row(
 			}
 		}
 		if (!part_is_null)  *key_is_null = FALSE;
-		
+
 		field = key_part->field;
 		mysql_type = field->type();
 
@@ -7116,7 +7136,7 @@ wsrep_store_key_val_for_row(
 
 			memcpy(sorted, data, true_len);
 			true_len = wsrep_innobase_mysql_sort(
-				mysql_type, cs->number, sorted, true_len, 
+				mysql_type, cs->number, sorted, true_len,
 				REC_VERSION_56_MAX_INDEX_COL_LEN);
 
 			if (wsrep_protocol_version > 1) {
@@ -7135,7 +7155,8 @@ wsrep_store_key_val_for_row(
                                 buff       += true_len;
 				buff_space -= true_len;
                         } else {
-                                buff += key_len;
+				buff += key_len;
+				buff_space -= key_len;
                         }
 		} else if (mysql_type == MYSQL_TYPE_TINY_BLOB
 			|| mysql_type == MYSQL_TYPE_MEDIUM_BLOB
