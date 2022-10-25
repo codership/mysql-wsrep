@@ -858,6 +858,11 @@ bool wsrep_check_mode (uint mask)
 
 bool wsrep_must_sync_wait (THD* thd, uint mask)
 {
+  /* sync wait should not happen inside trigger invocation,
+     the parent query has already waited for causality
+  */
+  if (thd->in_sub_stmt & SUB_STMT_TRIGGER) return false;
+
   return (thd->variables.wsrep_sync_wait & mask) &&
     thd->variables.wsrep_on &&
     !thd->in_active_multi_stmt_transaction() &&

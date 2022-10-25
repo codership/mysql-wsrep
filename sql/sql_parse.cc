@@ -7153,6 +7153,7 @@ static void wsrep_mysql_parse(THD *thd, const char *rawbuf, uint length,
           WSREP_DEBUG("wsrep retrying AC query: %s", WSREP_QUERY(thd));
 
           close_thread_tables(thd);
+          thd->mdl_context.release_transactional_locks();
 
           thd->wsrep_conflict_state= RETRY_AUTOCOMMIT;
           thd->wsrep_retry_counter++;            // grow
