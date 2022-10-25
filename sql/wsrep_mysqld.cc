@@ -1779,7 +1779,10 @@ void wsrep_to_isolation_end(THD *thd)
 }
 
 #define WSREP_MDL_LOG(severity, msg, schema, schema_len, req, gra)             \
-    WSREP_##severity(                                                          \
+  {                                                                            \
+      mysql_mutex_lock(&req->LOCK_thd_query);                                  \
+      mysql_mutex_lock(&gra->LOCK_thd_query);                                  \
+      WSREP_##severity(                	       	                               \
       "%s\n"                                                                   \
       "schema:  %.*s\n"                                                        \
       "request: (%u \tseqno %lld \twsrep (%d, %d, %d) cmd %d %d \t%s)\n"       \
@@ -1790,7 +1793,10 @@ void wsrep_to_isolation_end(THD *thd)
       req->get_command(), req->lex->sql_command, req->query().str,             \
       gra->thread_id(), (long long)wsrep_thd_trx_seqno(gra),                   \
       gra->wsrep_exec_mode, gra->wsrep_query_state, gra->wsrep_conflict_state, \
-      gra->get_command(), gra->lex->sql_command, gra->query().str);
+      gra->get_command(), gra->lex->sql_command, gra->query().str);            \
+      mysql_mutex_unlock(&gra->LOCK_thd_query);                                \
+      mysql_mutex_unlock(&req->LOCK_thd_query);                                \
+  }    	       	                                                               \
 
 bool
 wsrep_grant_mdl_exception(const MDL_context *requestor_ctx,

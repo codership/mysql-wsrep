@@ -20635,9 +20635,11 @@ wsrep_signal_replicator(trx_t *victim_trx, trx_t *bf_trx)
 		    wsrep_thd_thread_id(thd),
 		    (long long)victim_trx->id);
 
-	WSREP_DEBUG("Aborting query: %s",
-		  (thd && wsrep_thd_query(thd)) ? wsrep_thd_query(thd) : "void");
-
+	{
+		char buf[1024];
+		WSREP_DEBUG("Aborting query: %s",
+			    (wsrep_thd_query_buf(thd, buf, sizeof(buf))));
+	}
 	wsrep_thd_LOCK(thd);
         DBUG_EXECUTE_IF("sync.wsrep_after_BF_victim_lock",
                  {
@@ -20996,10 +20998,12 @@ wsrep_abort_transaction(handlerton* hton, THD *bf_thd, THD *victim_thd,
 	DBUG_ENTER("wsrep_innobase_abort_thd");
 	trx_t* victim_trx = thd_to_trx(victim_thd);
 	trx_t* bf_trx     = (bf_thd) ? thd_to_trx(bf_thd) : NULL;
-	WSREP_DEBUG("abort transaction: BF: %s victim: %s", 
-		    wsrep_thd_query(bf_thd),
-		    wsrep_thd_query(victim_thd));
-
+	{
+		char buf[1024];
+		WSREP_DEBUG("abort transaction: BF: %s victim: %s",
+			    wsrep_thd_query_buf(bf_thd, buf, sizeof(buf)),
+			    wsrep_thd_query_buf(victim_thd, buf, sizeof(buf)));
+	}
 	if (victim_trx)
 	{
                 lock_mutex_enter();
