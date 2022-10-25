@@ -1780,8 +1780,8 @@ void wsrep_to_isolation_end(THD *thd)
 
 #define WSREP_MDL_LOG(severity, msg, schema, schema_len, req, gra)             \
   {                                                                            \
-      mysql_mutex_lock(&req->LOCK_thd_query);                                  \
-      mysql_mutex_lock(&gra->LOCK_thd_query);                                  \
+      char buf_req[1024];                                                      \
+      char buf_gra[1024];                                                      \
       WSREP_##severity(                	       	                               \
       "%s\n"                                                                   \
       "schema:  %.*s\n"                                                        \
@@ -1790,12 +1790,12 @@ void wsrep_to_isolation_end(THD *thd)
       msg, schema_len, schema,                                                 \
       req->thread_id(), (long long)wsrep_thd_trx_seqno(req),                   \
       req->wsrep_exec_mode, req->wsrep_query_state, req->wsrep_conflict_state, \
-      req->get_command(), req->lex->sql_command, req->query().str,             \
+      req->get_command(), req->lex->sql_command,                               \
+      wsrep_thd_query_buf(req, buf_req, sizeof(buf_req)),                      \
       gra->thread_id(), (long long)wsrep_thd_trx_seqno(gra),                   \
       gra->wsrep_exec_mode, gra->wsrep_query_state, gra->wsrep_conflict_state, \
-      gra->get_command(), gra->lex->sql_command, gra->query().str);            \
-      mysql_mutex_unlock(&gra->LOCK_thd_query);                                \
-      mysql_mutex_unlock(&req->LOCK_thd_query);                                \
+      gra->get_command(), gra->lex->sql_command,                               \
+      wsrep_thd_query_buf(gra, buf_gra, sizeof(buf_gra)));                     \
   }    	       	                                                               \
 
 bool
