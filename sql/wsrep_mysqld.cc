@@ -1036,7 +1036,7 @@ static bool wsrep_prepare_key_for_isolation(const char* db,
     break;
   }
   default:
-    WSREP_ERROR("Unsupported protocol version %d", wsrep_protocol_version);
+    WSREP_ERROR("Unsupported protocol version %ld", wsrep_protocol_version);
     return false;
   }
   return true;
@@ -1195,7 +1195,7 @@ bool wsrep_prepare_key_for_innodb(const uchar* cache_key,
         break;
     }
     default:
-        WSREP_ERROR("Unsupported protocol version %d", wsrep_protocol_version);
+        WSREP_ERROR("Unsupported protocol version %ld", wsrep_protocol_version);
         return false;
     }
 
