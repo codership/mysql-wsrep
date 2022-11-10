@@ -3,42 +3,66 @@
 # string key collations
 #
 
---source collation_prepare.inc
+--source include/galera_cluster.inc
+--source include/have_innodb.inc
+--source include/have_debug_sync.inc
+--source suite/galera/include/galera_have_debug_sync.inc
 
-#
-# Create a table with a collation that does not ignore case
-#
+# We need two applier threads to avoid blocking on Galera internal
+# events
+--connection node_1
+SET GLOBAL wsrep_slave_threads = 2;
+
+# Session on node 1 for controlling sync points
+--connect node_1_ctrl, 127.0.0.1, root, , test, $NODE_MYPORT_1
+SET SESSION wsrep_sync_wait = 0;
+
+
+--echo #
+--echo # Case 1: Create a table with a collation that does not ignore case
+--echo #
+
 --connection node_1
 CREATE TABLE tcoll (string VARCHAR(16) CHARSET utf8 COLLATE utf8_bin PRIMARY KEY, node INTEGER) ENGINE=InnoDB;
---let $expect_rows = 2
 
---source collation_begin.inc
+--let $collation_query_node_1 = INSERT INTO tcoll VALUES ('abc', 1)
+--let $collation_query_node_2 = INSERT INTO tcoll VALUES ('ABC', 2)
+--source collation_non_conflicting.inc
 
-#
-# Send potentially conflicting transactions
-#
---connection node_1a
---send INSERT INTO tcoll VALUES ('abc', 1);
---connection node_2a
---send INSERT INTO tcoll VALUES ('ABC', 2);
+--connection node_1
+SELECT COUNT(*) AS expect_2 FROM tcoll;
 
---source collation_end.inc
+--connection node_2
+SELECT COUNT(*) AS expect_2 FROM tcoll;
 
-#
-# Create a table with a collation that ignores case
-#
+--connection node_1
+DROP TABLE tcoll;
+
+--echo #
+--echo # Case 2: reate a table with a collation that ignores case
+--echo #
+
 --connection node_1
 CREATE TABLE tcoll (string VARCHAR(16) CHARSET utf8 COLLATE utf8_general_ci PRIMARY KEY, node INTEGER) ENGINE=InnoDB;
---let $expect_rows = 1
 
---source collation_begin.inc
+--let $collation_query_node_1 = INSERT INTO tcoll VALUES ('abc', 1)
+--let $collation_query_node_2 = INSERT INTO tcoll VALUES ('ABC', 2)
+--source collation_conflicting.inc
 
-#
-# Send potentially conflicting transactions
-#
---connection node_1a
---send INSERT INTO tcoll VALUES ('abc', 1);
---connection node_2a
---send INSERT INTO tcoll VALUES ('ABC', 2);
+--connection node_1
+SELECT COUNT(*) AS expect_1 FROM tcoll;
 
---source collation_end.inc
+--connection node_2
+SELECT COUNT(*) AS expect_1 FROM tcoll;
+
+--connection node_1
+DROP TABLE tcoll;
+
+# Reset number of applier threads back to default and execute a
+# query to make the extra applier to exit before leaving the test.
+SET GLOBAL wsrep_slave_threads = DEFAULT;
+--connection node_2
+CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=InnoDB;
+--connection node_1
+SELECT * FROM t1;
+DROP TABLE t1;
