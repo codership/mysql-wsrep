@@ -11067,7 +11067,7 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli)
       {
         WSREP_WARN("BF applier failed to open_and_lock_tables: %u, fatal: %d "
                    "wsrep = (exec_mode: %d conflict_state: %d seqno: %lld) ",
-                   thd->get_stmt_da()->mysql_errno(),
+                   thd->is_error() ? thd->get_stmt_da()->mysql_errno() : 0,
                    thd->is_fatal_error,
                    thd->wsrep_exec_mode,
                    thd->wsrep_conflict_state,
@@ -11152,6 +11152,13 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli)
         */
         RPL_TABLE_LIST *ptr= static_cast<RPL_TABLE_LIST*>(table_list_ptr);
         assert(ptr->m_tabledef_valid);
+#ifdef WITH_WSREP
+	if (!ptr->table && WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
+            wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
+	{
+	  continue;
+	}
+#endif /* WITH_WSREP */
         TABLE *conv_table;
         if (!ptr->m_tabledef.compatible_with(thd, const_cast<Relay_log_info*>(rli),
                                              ptr->table, &conv_table))
@@ -11469,7 +11476,22 @@ AFTER_MAIN_EXEC_ROW_LOOP:
       error= 0;
     }
   } // if (table)
+#ifdef WITH_WSREP
+  else
+  {
+    if (WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
+	wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE) &&
+	thd->wsrep_table_open_error)
+    {
+      WSREP_DEBUG("applying failing for missing table");
+      error= HA_ERR_NO_SUCH_TABLE;
+      thd->is_slave_error= 1;
+      thd->wsrep_table_open_error= false;
 
+      DBUG_RETURN(error);
+    }
+  }
+#endif /* WITH_WSREP */
   if (error)
   {
     slave_rows_error_report(ERROR_LEVEL, error, rli, thd, table,

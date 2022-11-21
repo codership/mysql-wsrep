@@ -5726,6 +5726,7 @@ static Sys_var_uint Sys_wsrep_sync_wait(
 static const char *wsrep_mode_names[]= 
 { "IGNORE_NATIVE_REPLICATION_FILTER_RULES",
   "IGNORE_CASCADING_FK_DELETE_MISSING_ROW_ERROR",
+  "APPLIER_IGNORE_MISSING_TABLE",
   NullS
 };
 
@@ -5735,7 +5736,7 @@ static Sys_var_set Sys_wsrep_mode(
        " IGNORE_NATIVE_REPLICATION_FILTER_RULES ",
        GLOBAL_VAR(wsrep_mode), CMD_LINE(REQUIRED_ARG),
        wsrep_mode_names,
-       DEFAULT(0),
+       DEFAULT(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE),
        NO_MUTEX_GUARD, NOT_IN_BINLOG);
 
 static const char *wsrep_OSU_method_names[]= { "TOI", "RSU", NullS };

@@ -1,0 +1,150 @@
+#
+# This test 
+#
+
+--source include/galera_cluster.inc
+--source include/have_innodb.inc
+--source include/have_debug_sync.inc
+--source suite/galera/include/galera_have_debug_sync.inc
+
+--let $wsrep_local_replays_old = `SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'wsrep_local_replays'`
+
+create table t1(i int primary key auto_increment, j int);
+create table t2(i int primary key auto_increment, j int);
+create table t1_trig(i int primary key auto_increment, j int);
+
+create trigger t1_ins after insert on t1 for each row replace into t1_trig(i,j) values (NEW.i, NEW.j);
+create trigger t1_upd after update on t1 for each row replace into t1_trig(i,j) values (NEW.i, NEW.j);
+create trigger t1_del after delete on t1 for each row delete from t1_trig where t1_trig.i <=> OLD.i;
+
+insert into t1 values (1,0),(2,0),(3,0);
+insert into t2 values (1,0),(2,0),(3,0);
+
+--connect node_1b, 127.0.0.1, root, , test, $NODE_MYPORT_1
+--connect node_1a, 127.0.0.1, root, , test, $NODE_MYPORT_1
+
+--connection node_1
+SET DEBUG_SYNC = 'wsrep_before_certification WAIT_FOR continue';
+--send update t2 k, t1 y set k.j=7 where k.i= y.i and y.i=3
+
+# Wait until commit is blocked
+--connection node_1a
+SET SESSION wsrep_sync_wait = 0;
+--let $wait_condition = SELECT COUNT(*) = 1 FROM INFORMATION_SCHEMA.PROCESSLIST WHERE STATE = 'debug sync point: wsrep_before_certification'
+--source include/wait_condition.inc
+
+# Issue a conflicting DDL
+--connection node_1b
+SET DEBUG_SYNC = 'wsrep_before_abort_transaction SIGNAL at_BF_aborting WAIT_FOR BF_continue';
+--send RENAME TABLE t1 TO t1_old, t1_trig TO t1
+
+--connection node_1a
+set debug_sync='now WAIT_FOR at_BF_aborting';
+
+SET DEBUG_SYNC= 'now SIGNAL continue';
+--let $wait_condition = SELECT COUNT(*) = 1 FROM INFORMATION_SCHEMA.PROCESSLIST WHERE STATE = 'query end'
+--source include/wait_condition.inc
+
+SET DEBUG_SYNC= 'now SIGNAL BF_continue';
+
+# Commit succeeds
+--connection node_1
+--reap
+
+--connection node_1b
+--reap
+
+SELECT * FROM t2;
+
+--connection node_1a
+SET GLOBAL debug = NULL;
+SET debug_sync='RESET';
+
+--connection node_1b
+
+# wsrep_local_replays has increased by 1
+--let $wsrep_local_replays_new = `SELECT VARIABLE_VALUE FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_local_replays'`
+--disable_query_log
+--eval SELECT $wsrep_local_replays_new - $wsrep_local_replays_old = 2 AS wsrep_local_replays;
+--enable_query_log
+
+--connection node_2
+SELECT * FROM t2;
+
+DROP TABLE t1;
+DROP TABLE t1_old;
+DROP TABLE t2;
+
+
+#test phase 2
+--connection node_1
+CREATE TABLE t1(i INTEGER PRIMARY KEY, j INTEGER);
+
+--connection node_2
+SHOW CREATE TABLE t1;
+SET wsrep_on = OFF;
+DROP TABLE t1;
+SET wsrep_on = ON;
+
+--connection node_1
+INSERT INTO t1 VALUES (1,0),(2,0),(3,0);
+
+--connection node_2
+--let $_expect_file_name= $MYSQLTEST_VARDIR/tmp/mysqld.2.expect
+--source include/start_mysqld.inc
+--source include/wait_until_connected_again.inc
+SHOW CREATE TABLE t1;
+SELECT * FROM t1;
+
+DROP TABLE t1;
+
+
+#test phase 3
+--connection node_1
+create table t1(i int primary key, j int);
+create table t2(i int primary key, j int);
+
+insert into t1 values (1,0),(2,0),(3,0);
+insert into t2 values (1,0),(2,0),(3,0);
+
+
+--connection node_2
+SHOW CREATE TABLE t1; 
+SET wsrep_on = OFF;
+DROP TABLE t2;
+SET wsrep_on = ON;
+
+--connection node_1
+UPDATE t2 k, t1 y SET k.j=7, y.j=7 WHERE k.i= y.i AND y.i=3;
+
+--connection node_2
+--let $_expect_file_name= $MYSQLTEST_VARDIR/tmp/mysqld.2.expect
+--source include/start_mysqld.inc
+--source include/wait_until_connected_again.inc
+SHOW CREATE TABLE t1; 
+SELECT * FROM t1; 
+SELECT * FROM t2;
+
+DROP TABLE t1; 
+DROP TABLE t2;
+
+
+--connection node_1
+# make sure that the trigger table is completely destroyed
+create table t1_trig(i int primary key auto_increment, j int);
+drop table t1_trig;
+
+CALL mtr.add_suppression("WSREP: applier failed to open*");
+CALL mtr.add_suppression("InnoDB: Cannot open table*");
+
+--connection node_2
+CALL mtr.add_suppression("WSREP: applier failed to open*");
+CALL mtr.add_suppression("InnoDB: Cannot open table*");
+
+CALL mtr.add_suppression("WSREP: BF applier failed to open.*");
+CALL mtr.add_suppression("WSREP: Failed to apply.*");
+CALL mtr.add_suppression("WSREP: RBR event 3 Write_rows apply.*");
+CALL mtr.add_suppression("WSREP: Node consistency compromised.*");
+CALL mtr.add_suppression("Software caused connection abort)");
+CALL mtr.add_suppression("WSREP: [a-z0-9]* down context\\(s\\) not set");
+CALL mtr.add_suppression("WSREP: RBR event 4 Update_rows.*");

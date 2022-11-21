@@ -1,0 +1,107 @@
+create table t1(i int primary key auto_increment, j int);
+create table t2(i int primary key auto_increment, j int);
+create table t1_trig(i int primary key auto_increment, j int);
+create trigger t1_ins after insert on t1 for each row replace into t1_trig(i,j) values (NEW.i, NEW.j);
+create trigger t1_upd after update on t1 for each row replace into t1_trig(i,j) values (NEW.i, NEW.j);
+create trigger t1_del after delete on t1 for each row delete from t1_trig where t1_trig.i <=> OLD.i;
+insert into t1 values (1,0),(2,0),(3,0);
+insert into t2 values (1,0),(2,0),(3,0);
+SET DEBUG_SYNC = 'wsrep_before_certification WAIT_FOR continue';
+update t2 k, t1 y set k.j=7 where k.i= y.i and y.i=3;
+SET SESSION wsrep_sync_wait = 0;
+SET DEBUG_SYNC = 'wsrep_before_abort_transaction SIGNAL at_BF_aborting WAIT_FOR BF_continue';
+RENAME TABLE t1 TO t1_old, t1_trig TO t1;
+set debug_sync='now WAIT_FOR at_BF_aborting';
+SET DEBUG_SYNC= 'now SIGNAL continue';
+SET DEBUG_SYNC= 'now SIGNAL BF_continue';
+SELECT * FROM t2;
+i	j
+1	0
+2	0
+3	7
+SET GLOBAL debug = NULL;
+SET debug_sync='RESET';
+wsrep_local_replays
+0
+SELECT * FROM t2;
+i	j
+1	0
+2	0
+3	7
+DROP TABLE t1;
+DROP TABLE t1_old;
+DROP TABLE t2;
+CREATE TABLE t1(i INTEGER PRIMARY KEY, j INTEGER);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) NOT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`i`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+SET wsrep_on = OFF;
+DROP TABLE t1;
+SET wsrep_on = ON;
+INSERT INTO t1 VALUES (1,0),(2,0),(3,0);
+# restart
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) NOT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`i`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+SELECT * FROM t1;
+i	j
+1	0
+2	0
+3	0
+DROP TABLE t1;
+create table t1(i int primary key, j int);
+create table t2(i int primary key, j int);
+insert into t1 values (1,0),(2,0),(3,0);
+insert into t2 values (1,0),(2,0),(3,0);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) NOT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`i`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+SET wsrep_on = OFF;
+DROP TABLE t2;
+SET wsrep_on = ON;
+UPDATE t2 k, t1 y SET k.j=7, y.j=7 WHERE k.i= y.i AND y.i=3;
+# restart
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) NOT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`i`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+SELECT * FROM t1;
+i	j
+1	0
+2	0
+3	7
+SELECT * FROM t2;
+i	j
+1	0
+2	0
+3	7
+DROP TABLE t1;
+DROP TABLE t2;
+create table t1_trig(i int primary key auto_increment, j int);
+drop table t1_trig;
+CALL mtr.add_suppression("WSREP: applier failed to open*");
+CALL mtr.add_suppression("InnoDB: Cannot open table*");
+CALL mtr.add_suppression("WSREP: applier failed to open*");
+CALL mtr.add_suppression("InnoDB: Cannot open table*");
+CALL mtr.add_suppression("WSREP: BF applier failed to open.*");
+CALL mtr.add_suppression("WSREP: Failed to apply.*");
+CALL mtr.add_suppression("WSREP: RBR event 3 Write_rows apply.*");
+CALL mtr.add_suppression("WSREP: Node consistency compromised.*");
+CALL mtr.add_suppression("Software caused connection abort)");
+CALL mtr.add_suppression("WSREP: [a-z0-9]* down context\\(s\\) not set");
+CALL mtr.add_suppression("WSREP: RBR event 4 Update_rows.*");

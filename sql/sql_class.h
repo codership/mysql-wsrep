@@ -3096,7 +3096,7 @@ public:
   ulong                     wsrep_gtid_event_buf_len;
   bool                      wsrep_replicate_GTID;
   bool                      wsrep_skip_wsrep_GTID;
-
+  bool                      wsrep_table_open_error;
   /*
     Transaction id:
     * m_next_wsrep_trx_id is assigned on the first query after

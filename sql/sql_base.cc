@@ -5271,6 +5271,13 @@ open_and_process_table(THD *thd, LEX *lex, TABLE_LIST *tables,
                           tables->db, tables->alias));
       error= FALSE;
     }
+#ifdef WITH_WSREP_OUT
+    if (WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
+        wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
+    {
+      error= FALSE;
+    }
+#endif /* WITH_WSREP */
     goto end;
   }
 
@@ -5798,6 +5805,9 @@ bool open_tables(THD *thd, TABLE_LIST **start, uint *counter, uint flags,
 #ifndef EMBEDDED_LIBRARY
   bool audit_notified= false;
 #endif /* !EMBEDDED_LIBRARY */
+#ifdef WITH_WSREP
+  bool all_tables_failed= true;
+#endif /* WITH_WSREP */
 
 restart:
   /*
@@ -5887,6 +5897,17 @@ restart:
                                     flags, prelocking_strategy,
                                     has_prelocking_list, &ot_ctx);
 
+#ifdef WITH_WSREP
+      if (error && WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
+          wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
+      {
+	/* silence table open error */
+	error= 0;
+	(*table_to_open)->table= NULL;
+	thd->wsrep_table_open_error= true;
+      }
+      else  all_tables_failed= false;
+#endif /* WITH_WSREP */
       if (error)
       {
         if (ot_ctx.can_recover_from_failed_open())
@@ -5928,7 +5949,15 @@ restart:
 
       DEBUG_SYNC(thd, "open_tables_after_open_and_process_table");
     }
-
+#ifdef WITH_WSREP
+    if (all_tables_failed && WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
+	wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
+    {
+      WSREP_DEBUG("all tables failed to open, flagging error");
+      error= 1;
+      goto err;
+    }
+#endif /* WITH_WSREP */
     /*
       Iterate through set of tables and generate table access audit events.
     */

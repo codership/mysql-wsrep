@@ -855,7 +855,7 @@ bool wsrep_start_replication()
 
 bool wsrep_check_mode (uint mask)
 {
-  return wsrep_mode & (1ULL << mask);
+  return wsrep_mode & mask;
 }
 
 bool wsrep_must_sync_wait (THD* thd, uint mask)

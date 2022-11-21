@@ -1353,6 +1353,7 @@ THD::THD(bool enable_plugins)
    wsrep_apply_toi(false),
    wsrep_gtid_event_buf(NULL),
    wsrep_gtid_event_buf_len(0),
+   wsrep_table_open_error(false),
 #endif
    m_parser_state(NULL),
    work_part_info(NULL),
@@ -1873,6 +1874,7 @@ void THD::init(void)
   wsrep_gtid_event_buf    = NULL;
   wsrep_gtid_event_buf_len = 0;
   m_wsrep_next_trx_id     = WSREP_UNDEFINED_TRX_ID;
+  wsrep_table_open_error  = false;
 #endif
   status_var_aggregated= false;
   binlog_row_event_extra_data= 0;
