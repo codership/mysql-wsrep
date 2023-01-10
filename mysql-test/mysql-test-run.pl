@@ -3878,6 +3878,18 @@ sub check_wsrep_support() {
     if (defined $ENV{'MTR_GARBD_EXE'}) {
       mtr_verbose("MTR_GARBD_EXE env set to $ENV{MTR_GARBD_EXE}");
     }
+    # Search wsrep_diag.sql in order of
+    # - Source build
+    # - Tarball distribution
+    # - RPM/DEB installation
+    my $file_wsrep_diag = mtr_file_exists("$basedir/scripts/wsrep_diag.sql",
+                                          "$basedir/share/wsrep_diag.sql",
+                                          "$basedir/share/mysql/wsrep_diag.sql"
+                                         );
+    if (not $file_wsrep_diag) {
+      mtr_error("File wsrep_diag.sql not found");
+    }
+    $ENV{'WSREP_DIAG_SQL'} = $file_wsrep_diag;
   }
 }
 

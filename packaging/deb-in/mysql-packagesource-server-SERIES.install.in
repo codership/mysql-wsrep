@@ -127,6 +127,7 @@ usr/share/mysql/mysql_test_data_timezone.sql
 usr/share/mysql/mysqld_multi.server
 usr/share/mysql/uninstall_rewriter.sql
 usr/share/mysql/wsrep.cnf
+usr/share/mysql/wsrep_diag.sql
 usr/share/mysql/wsrep_notify
 usr/share/mysql/mysql-helpers
 # localized error msgs

@@ -446,7 +446,9 @@ ELSE()
       wsrep_sst_rsync
       wsrep_sst_xtrabackup
       wsrep_sst_xtrabackup-v2
-    )
+      )
+    INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/wsrep_diag.sql
+      DESTINATION ${INSTALL_MYSQLSHAREDIR} COMPONENT Server)
   ENDIF()
 
   SET(PKGCONFIG_FILE ${LIBMYSQL_OS_OUTPUT_NAME}.pc)

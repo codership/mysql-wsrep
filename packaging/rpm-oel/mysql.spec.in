@@ -1251,6 +1251,7 @@ fi
 %attr(644, root, root) %{_datadir}/mysql/uninstall_rewriter.sql
 %attr(644, root, root) %{_datadir}/mysql/magic
 %attr(644, root, root) %{_datadir}/mysql/wsrep_notify
+%attr(644, root, root) %{_datadir}/mysql/wsrep_diag.sql
 %if 0%{?systemd}
 %attr(644, root, root) %{_unitdir}/mysqld.service
 %attr(644, root, root) %{_unitdir}/mysqld@.service

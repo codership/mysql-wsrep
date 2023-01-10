@@ -1,0 +1,10 @@
+#
+# Verify that wsrep_diag.sql can be executed without errors.
+#
+
+--source include/have_wsrep.inc
+
+--echo "Executing wsrep_diag.sql"
+--exec $MYSQL < $WSREP_DIAG_SQL > $MYSQL_TMP_DIR/wsrep_diag.out
+--remove_file $MYSQL_TMP_DIR/wsrep_diag.out
+
