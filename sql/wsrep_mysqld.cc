@@ -1218,8 +1218,12 @@ int wsrep_to_buf_helper(
 {
   IO_CACHE tmp_io_cache;
   if (open_cached_file(&tmp_io_cache, mysql_tmpdir, TEMP_PREFIX,
-                       65536, MYF(MY_WME)))
+                       65536, MYF(MY_WME)) ||
+      DBUG_EVALUATE_IF("wsrep_buf_simulate_open_temp_cache_failure", 1, 0))
+  {
+    WSREP_WARN("Failed to open temp cache for the query: %s", query);
     return 1;
+  }
   int ret(0);
 
 #ifdef TODO
@@ -1244,13 +1248,29 @@ int wsrep_to_buf_helper(
     Query_log_event ev(thd, thd->wsrep_TOI_pre_query,
 		       thd->wsrep_TOI_pre_query_len,
 		       FALSE, FALSE, FALSE, 0);
-    if (ev.write(&tmp_io_cache)) ret= 1;
+    if (ev.write(&tmp_io_cache))
+    {
+      WSREP_WARN("Failed to write event for TO isolation prepare query: %s",
+                 thd->wsrep_TOI_pre_query);
+      ret= 1;
+    }
   }
 
   /* continue to append the actual query */
   Query_log_event ev(thd, query, query_len, FALSE, FALSE, FALSE, 0);
-  if (!ret && ev.write(&tmp_io_cache)) ret= 1;
-  if (!ret && wsrep_write_cache_buf(&tmp_io_cache, buf, buf_len)) ret= 1;
+  if (!ret && (ev.write(&tmp_io_cache) ||
+      DBUG_EVALUATE_IF("wsrep_buf_simulate_write_event_failure", 1, 0)))
+  {
+    WSREP_WARN("Failed to write event for the query: %s", query);
+    ret= 1;
+  }
+
+  if (!ret && (wsrep_write_cache_buf(&tmp_io_cache, buf, buf_len) ||
+      DBUG_EVALUATE_IF("wsrep_buf_simulate_write_cache_buf_failure", 1, 0)))
+  {
+    WSREP_WARN("Failed to write query events to the output buffer: %s", query);
+    ret= 1;
+  }
 
   thd->wsrep_gtid_event_buf= *buf;
 
@@ -1548,7 +1568,7 @@ static int wsrep_TOI_begin(THD *thd, const char *db_, const char *table_,
     WSREP_DEBUG("TO BEGIN: %lld, %d",(long long)wsrep_thd_trx_seqno(thd),
                 thd->wsrep_exec_mode);
   }
-  else if (key_arr.keys_len > 0) {
+  else if (buf_err || key_arr.keys_len > 0) {
     /* jump to error handler in mysql_execute_command() */
     WSREP_WARN("TO isolation failed for: %d, schema: %s, sql: %s. Check wsrep "
                "connection state and retry the query.",

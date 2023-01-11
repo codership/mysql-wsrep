@@ -1,0 +1,16 @@
+call mtr.add_suppression("TO isolation failed");
+call mtr.add_suppression("Failed to open temp cache for the query");
+set GLOBAL debug = 'd,wsrep_buf_simulate_open_temp_cache_failure';
+CREATE TABLE t1 (f1 INTEGER) ENGINE=InnoDB;
+ERROR 40001: Deadlock found when trying to get lock; try restarting transaction
+# restart
+call mtr.add_suppression("Failed to write event for the query");
+set GLOBAL debug = 'd,wsrep_buf_simulate_write_event_failure';
+CREATE TABLE t1 (f1 INTEGER) ENGINE=InnoDB;
+ERROR 40001: Deadlock found when trying to get lock; try restarting transaction
+# restart
+call mtr.add_suppression("Failed to write query events to the output buffer");
+set GLOBAL debug = 'd,wsrep_buf_simulate_write_cache_buf_failure';
+CREATE TABLE t1 (f1 INTEGER) ENGINE=InnoDB;
+ERROR 40001: Deadlock found when trying to get lock; try restarting transaction
+set GLOBAL debug = '';

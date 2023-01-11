@@ -1,0 +1,44 @@
+#
+# Test TOI query failure with simulated wsrep_to_buf_helper() errors.
+#
+
+--source include/galera_cluster.inc
+--source include/have_innodb.inc
+--source include/have_debug.inc
+--source include/big_test.inc
+
+--connection node_2
+
+call mtr.add_suppression("TO isolation failed");
+
+# ---
+
+call mtr.add_suppression("Failed to open temp cache for the query");
+
+set GLOBAL debug = 'd,wsrep_buf_simulate_open_temp_cache_failure';
+--error ER_LOCK_DEADLOCK
+CREATE TABLE t1 (f1 INTEGER) ENGINE=InnoDB;
+
+--source include/restart_mysqld.inc
+
+# ---
+
+call mtr.add_suppression("Failed to write event for the query");
+
+set GLOBAL debug = 'd,wsrep_buf_simulate_write_event_failure';
+--error ER_LOCK_DEADLOCK
+CREATE TABLE t1 (f1 INTEGER) ENGINE=InnoDB;
+
+--source include/restart_mysqld.inc
+
+# ---
+
+call mtr.add_suppression("Failed to write query events to the output buffer");
+
+set GLOBAL debug = 'd,wsrep_buf_simulate_write_cache_buf_failure';
+--error ER_LOCK_DEADLOCK
+CREATE TABLE t1 (f1 INTEGER) ENGINE=InnoDB;
+
+# No need to restart, only perform the cleanup.
+
+set GLOBAL debug = '';
