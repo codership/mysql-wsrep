@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Copyright (c) 2016, Codership Oy. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
@@ -28,13 +29,20 @@
 
 OLDVAL=$(systemctl show-environment | grep '^MYSQLD_OPTS=')
 
+cleanup () {
+    if [ -z "$OLDVAL" ]; then
+        systemctl unset-environment MYSQLD_OPTS
+    else
+        systemctl set-environment "$OLDVAL"
+    fi
+}
+
+trap cleanup EXIT
+
 if [ -z "$OLDVAL" ]; then
-    systemctl set-environment   MYSQLD_OPTS="--wsrep-new-cluster"
-    systemctl start             @SYSTEMD_SERVICE_NAME@
-    systemctl unset-environment MYSQLD_OPTS
+    systemctl set-environment MYSQLD_OPTS="--wsrep-new-cluster"
 else
-    systemctl set-environment   "$OLDVAL --wsrep-new-cluster"
-    systemctl start             @SYSTEMD_SERVICE_NAME@
-    systemctl set-environment   "$OLDVAL"
+    systemctl set-environment "$OLDVAL --wsrep-new-cluster"
 fi
 
+systemctl start @SYSTEMD_SERVICE_NAME@
