@@ -6,9 +6,10 @@ create trigger t1_upd after update on t1 for each row replace into t1_trig(i,j) 
 create trigger t1_del after delete on t1 for each row delete from t1_trig where t1_trig.i <=> OLD.i;
 insert into t1 values (1,0),(2,0),(3,0);
 insert into t2 values (1,0),(2,0),(3,0);
-SET DEBUG_SYNC = 'wsrep_before_certification WAIT_FOR continue';
+SET DEBUG_SYNC = 'wsrep_before_certification SIGNAL at_wsrep_before_certification WAIT_FOR continue';
 update t2 k, t1 y set k.j=7 where k.i= y.i and y.i=3;
 SET SESSION wsrep_sync_wait = 0;
+SET DEBUG_SYNC = 'now WAIT_FOR at_wsrep_before_certification';
 SET DEBUG_SYNC = 'wsrep_before_abort_transaction SIGNAL at_BF_aborting WAIT_FOR BF_continue';
 RENAME TABLE t1 TO t1_old, t1_trig TO t1;
 set debug_sync='now WAIT_FOR at_BF_aborting';
@@ -22,7 +23,7 @@ i	j
 SET GLOBAL debug = NULL;
 SET debug_sync='RESET';
 wsrep_local_replays
-0
+1
 SELECT * FROM t2;
 i	j
 1	0
@@ -31,6 +32,9 @@ i	j
 DROP TABLE t1;
 DROP TABLE t1_old;
 DROP TABLE t2;
+########################################################################
+#                         test phase 2
+########################################################################
 CREATE TABLE t1(i INTEGER PRIMARY KEY, j INTEGER);
 SHOW CREATE TABLE t1;
 Table	Create Table
@@ -57,6 +61,9 @@ i	j
 2	0
 3	0
 DROP TABLE t1;
+########################################################################
+#                         test phase 2
+########################################################################
 create table t1(i int primary key, j int);
 create table t2(i int primary key, j int);
 insert into t1 values (1,0),(2,0),(3,0);

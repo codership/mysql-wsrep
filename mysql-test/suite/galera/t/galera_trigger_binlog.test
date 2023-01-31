@@ -1,5 +1,17 @@
 #
-# This test 
+# This test reproduces an issue, originally observed when executing pt_osc
+# while the application is using multi-table update statements for the modified table.
+#
+# The actual problem can happen whenever there is a table (t1) , with trigger definion which
+# writes to another table (t1-trig), and a multi-statement update, which uses tables t1 and t2,
+# but updates only table t2. i.e. table t1 is used for reading only. And therefore t1_trig does not
+# get any writes either.
+# However, such multi-table update will write to binlog table map events for both t2 and t1_trig.
+# This leads to an issue in applying side, where the presence of table t1_trig  is required
+# for successful applying.
+# The test will use tables t1, t1_trig and t2, and rename (or drop) table t1_trig concurrently
+# so that the multi-table update has to replay and receiving node has to drop t1_trig before
+# applying the binlog events for the update transaction.
 #
 
 --source include/galera_cluster.inc
@@ -24,14 +36,13 @@ insert into t2 values (1,0),(2,0),(3,0);
 --connect node_1a, 127.0.0.1, root, , test, $NODE_MYPORT_1
 
 --connection node_1
-SET DEBUG_SYNC = 'wsrep_before_certification WAIT_FOR continue';
+SET DEBUG_SYNC = 'wsrep_before_certification SIGNAL at_wsrep_before_certification WAIT_FOR continue';
 --send update t2 k, t1 y set k.j=7 where k.i= y.i and y.i=3
 
 # Wait until commit is blocked
 --connection node_1a
 SET SESSION wsrep_sync_wait = 0;
---let $wait_condition = SELECT COUNT(*) = 1 FROM INFORMATION_SCHEMA.PROCESSLIST WHERE STATE = 'debug sync point: wsrep_before_certification'
---source include/wait_condition.inc
+SET DEBUG_SYNC = 'now WAIT_FOR at_wsrep_before_certification';
 
 # Issue a conflicting DDL
 --connection node_1b
@@ -65,7 +76,7 @@ SET debug_sync='RESET';
 # wsrep_local_replays has increased by 1
 --let $wsrep_local_replays_new = `SELECT VARIABLE_VALUE FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_local_replays'`
 --disable_query_log
---eval SELECT $wsrep_local_replays_new - $wsrep_local_replays_old = 2 AS wsrep_local_replays;
+--eval SELECT $wsrep_local_replays_new - $wsrep_local_replays_old = 1 AS wsrep_local_replays;
 --enable_query_log
 
 --connection node_2
@@ -75,8 +86,13 @@ DROP TABLE t1;
 DROP TABLE t1_old;
 DROP TABLE t2;
 
-
-#test phase 2
+--echo ########################################################################
+--echo #                         test phase 2
+--echo ########################################################################
+# Create deliberately inconsistent cluster, so that node 2 does not have table t1
+# and replucate an INSERT for table t1. Applying in node 2 should now react to the
+# missing table by sutting dow, and not by ignoring the error
+#
 --connection node_1
 CREATE TABLE t1(i INTEGER PRIMARY KEY, j INTEGER);
 
@@ -99,7 +115,13 @@ SELECT * FROM t1;
 DROP TABLE t1;
 
 
-#test phase 3
+--echo ########################################################################
+--echo #                         test phase 2
+--echo ########################################################################
+# Similar incosnsistent cluster as with test phase 2, but now try with multi-table
+# update, if missing the other table used in the update statement, will cause node
+# shutdown
+#
 --connection node_1
 create table t1(i int primary key, j int);
 create table t2(i int primary key, j int);
@@ -134,6 +156,9 @@ DROP TABLE t2;
 create table t1_trig(i int primary key auto_increment, j int);
 drop table t1_trig;
 
+# several error and warning suppressions needed, because test phases 2 and 3
+# caused real inconsistency issues, these write warnings in node 2
+#
 CALL mtr.add_suppression("WSREP: applier failed to open*");
 CALL mtr.add_suppression("InnoDB: Cannot open table*");
 
