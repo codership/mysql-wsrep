@@ -441,6 +441,7 @@ ELSE()
       ${CMAKE_CURRENT_BINARY_DIR}/wsrep_sst_backup ESCAPE_QUOTES @ONLY)
     SET(BIN_SCRIPTS
       ${BIN_SCRIPTS}
+      wsrep_recover
       wsrep_sst_common
       wsrep_sst_mysqldump
       wsrep_sst_rsync

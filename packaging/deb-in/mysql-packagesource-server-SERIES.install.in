@@ -44,6 +44,7 @@ usr/bin/perror
 usr/bin/replace
 usr/bin/resolveip
 usr/bin/resolve_stack_dump 
+usr/bin/wsrep_recover
 usr/bin/wsrep_sst_common
 usr/bin/wsrep_sst_mysqldump
 usr/bin/wsrep_sst_rsync

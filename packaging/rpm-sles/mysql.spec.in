@@ -927,6 +927,7 @@ fi
 %attr(755, root, root) %{_sbindir}/mysqld-debug
 %{_sbindir}/rcmysql
 
+%attr(755, root, root) %{_bindir}/wsrep_recover
 %attr(755, root, root) %{_bindir}/wsrep_sst_common
 %attr(755, root, root) %{_bindir}/wsrep_sst_mysqldump
 %attr(755, root, root) %{_bindir}/wsrep_sst_rsync

@@ -1,8 +1,16 @@
 diff --git a/databases/mysqlwsrep57-server/pkg-plist b/databases/mysqlwsrep57-server/pkg-plist
-index 4e42ca872..412e1332b 100644
+index 4e42ca872875..26fdf312b31a 100644
 --- a/databases/mysqlwsrep57-server/pkg-plist
 +++ b/databases/mysqlwsrep57-server/pkg-plist
-@@ -164,6 +164,7 @@ share/man/man8/mysqld.8.gz
+@@ -20,6 +20,7 @@ bin/replace
+ bin/resolve_stack_dump
+ bin/resolveip
+ bin/zlib_decompress
++bin/wsrep_recover
+ bin/wsrep_sst_common
+ bin/wsrep_sst_mysqldump
+ bin/wsrep_sst_rsync
+@@ -164,6 +165,7 @@ share/man/man8/mysqld.8.gz
  %%DATADIR%%/swedish/errmsg.sys
  %%DATADIR%%/ukrainian/errmsg.sys
  %%DATADIR%%/uninstall_rewriter.sql
