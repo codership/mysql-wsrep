@@ -380,18 +380,15 @@ trx_sys_read_wsrep_checkpoint(XID* xid)
                 return;
         }
 
-        xid->set_format_id((long)mach_read_from_4(
+        xid->set_format_id((int)mach_read_from_4(
                 sys_header
                 + TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_FORMAT));
-        xid->set_gtrid_length((long)mach_read_from_4(
+        xid->set_gtrid_length((int)mach_read_from_4(
                 sys_header
                 + TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_GTRID_LEN));
-        xid->set_bqual_length((long)mach_read_from_4(
+        xid->set_bqual_length((int)mach_read_from_4(
                 sys_header
                 + TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_BQUAL_LEN));
-        //ut_memcpy(xid->data,
-        //          sys_header + TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_DATA,
-        //          XIDDATASIZE);
         xid->set_data(
                       sys_header + TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_DATA, 
                       XIDDATASIZE);
