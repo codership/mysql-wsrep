@@ -6115,21 +6115,9 @@ ha_innobase::open(
 			" internal data dictionary of InnoDB though the .frm"
 			" file for the table exists. " << TROUBLESHOOTING_MSG;
 
-#ifdef WITH_WSREP
-		if (wsrep_on(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV)
-		{
-			WSREP_WARN("applier failed to open table in InnoDB: %s",
-                                   norm_name);
-
-			DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
-		} else {
-#endif /* WITH_WSREP */
 		set_my_errno(ENOENT);
-		DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
 
-#ifdef WITH_WSREP
-		}
-#endif /* WITH_WSREP */
+		DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
 	}
 
 	innobase_copy_frm_flags_from_table_share(ib_table, table->s);

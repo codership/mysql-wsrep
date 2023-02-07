@@ -74,7 +74,7 @@ SET debug_sync='RESET';
 --connection node_1b
 
 # wsrep_local_replays has increased by 1
---let $wsrep_local_replays_new = `SELECT VARIABLE_VALUE FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_local_replays'`
+--let $wsrep_local_replays_new = `SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'wsrep_local_replays'`
 --disable_query_log
 --eval SELECT $wsrep_local_replays_new - $wsrep_local_replays_old = 1 AS wsrep_local_replays;
 --enable_query_log
@@ -118,7 +118,7 @@ DROP TABLE t1;
 --echo ########################################################################
 --echo #                         test phase 2
 --echo ########################################################################
-# Similar incosnsistent cluster as with test phase 2, but now try with multi-table
+# Similar inconsistent cluster as with test phase 2, but now try with multi-table
 # update, if missing the other table used in the update statement, will cause node
 # shutdown
 #

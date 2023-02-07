@@ -11153,11 +11153,13 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli)
         RPL_TABLE_LIST *ptr= static_cast<RPL_TABLE_LIST*>(table_list_ptr);
         assert(ptr->m_tabledef_valid);
 #ifdef WITH_WSREP
-	if (!ptr->table && WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
+        if (!ptr->table && WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
             wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
-	{
-	  continue;
-	}
+        {
+          /* if applier failed to open one table, and we have mode to ignore
+             missing tables in applying, we continue with next table */
+          continue;
+        }
 #endif /* WITH_WSREP */
         TABLE *conv_table;
         if (!ptr->m_tabledef.compatible_with(thd, const_cast<Relay_log_info*>(rli),
@@ -11479,6 +11481,7 @@ AFTER_MAIN_EXEC_ROW_LOOP:
 #ifdef WITH_WSREP
   else
   {
+    /* if applier fails to open any of the table, we return error */
     if (WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
 	wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE) &&
 	thd->wsrep_table_open_error)

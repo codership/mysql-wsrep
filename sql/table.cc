@@ -849,6 +849,8 @@ err_not_open:
     if (WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
         wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
     {
+      /* if applier failed to open a table definition, use specialized error code
+         but skip reporting the error */
       WSREP_WARN("applier failed to open table def: '%s'.'%s'  path: '%s' refs: %d",
                  share->db.str, share->table_name.str,
                  share->normalized_path.str, share->ref_count);
@@ -3445,6 +3447,7 @@ partititon_err:
           if (WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
               wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
           {
+            /* avoid reporting error, if applier fails to open table */
             WSREP_WARN("applier failed to open table in InnoDB: %s",
                        share->normalized_path.str);
             error= 1;

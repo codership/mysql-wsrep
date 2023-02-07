@@ -5271,13 +5271,6 @@ open_and_process_table(THD *thd, LEX *lex, TABLE_LIST *tables,
                           tables->db, tables->alias));
       error= FALSE;
     }
-#ifdef WITH_WSREP_OUT
-    if (WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
-        wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
-    {
-      error= FALSE;
-    }
-#endif /* WITH_WSREP */
     goto end;
   }
 
@@ -5806,7 +5799,7 @@ bool open_tables(THD *thd, TABLE_LIST **start, uint *counter, uint flags,
   bool audit_notified= false;
 #endif /* !EMBEDDED_LIBRARY */
 #ifdef WITH_WSREP
-  bool all_tables_failed= true;
+  bool all_tables_failed= true; /* false, if one or more tables can be opened */
 #endif /* WITH_WSREP */
 
 restart:
@@ -5898,6 +5891,8 @@ restart:
                                     has_prelocking_list, &ot_ctx);
 
 #ifdef WITH_WSREP
+      /* if applier failed to open a table, we skip applying events for this
+         table but no error is raised */
       if (error && WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
           wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
       {
@@ -5950,6 +5945,7 @@ restart:
       DEBUG_SYNC(thd, "open_tables_after_open_and_process_table");
     }
 #ifdef WITH_WSREP
+    /* if applier failed to open all tables, then an error is flagged */
     if (all_tables_failed && WSREP(thd) && wsrep_thd_exec_mode(thd) == REPL_RECV &&
 	wsrep_check_mode(WSREP_MODE_APPLIER_IGNORE_MISSING_TABLE))
     {
