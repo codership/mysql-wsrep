@@ -20,7 +20,7 @@ CREATE TABLE child (
     parent_id INT
 ) ENGINE=InnoDB;
 
-INSERT INTO parent VALUES (DEFAULT, 0);
+INSERT INTO parent VALUES (1, 0);
 
 --connection node_2
 --send INSERT INTO child (parent_id) SELECT 1 FROM ten AS a1, ten AS a2, ten AS a3, ten AS a4;
@@ -35,13 +35,16 @@ INSERT INTO parent VALUES (DEFAULT, 0);
 --let $galera_server_number = 2
 --source include/galera_connect.inc
 --connection node_2a
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+--let $wait_condition = SELECT COUNT(*) > 0 FROM child
+--source include/wait_condition.inc
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
 --send INSERT INTO parent (f2) SELECT 2 FROM ten AS a1, ten AS a2, ten AS a3, ten AS a4;
 
 --let $galera_connection_name = node_1b
 --let $galera_server_number = 1
 --source include/galera_connect.inc
 --connection node_1b
---sleep 2
 --send ALTER TABLE child ADD FOREIGN KEY (parent_id) REFERENCES parent(id);
 
 --connection node_1a
@@ -68,3 +71,4 @@ DROP TABLE child;
 DROP TABLE parent;
 
 DROP TABLE ten;
+
