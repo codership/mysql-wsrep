@@ -314,6 +314,7 @@ wsrep_view_handler_cb (void*                    app_ctx,
       WSREP_ERROR("SST preparation failed: %zd (%s)", -req_len,
                   strerror(-req_len));
       new_status= WSREP_MEMBER_UNDEFINED;
+      return WSREP_CB_FAILURE;
     }
     else
     {

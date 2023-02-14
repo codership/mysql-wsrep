@@ -1,0 +1,60 @@
+#
+# Joiner hangs during shutdown due to SST failure.
+#
+# codership/mysql-wsrep-bugs#1412
+#
+
+--source include/galera_cluster.inc
+--source include/have_innodb.inc
+--source include/have_debug.inc
+
+
+--connection node_1
+
+CREATE TABLE t1 (f1 INTEGER PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(1);
+
+#
+# Stop replication on node_2, we will use this node to
+# simulate a failure during SST
+#
+--connection node_2
+--source include/expect_crash.inc
+--source suite/galera/include/galera_stop_replication.inc
+
+#
+# Wait for node_2 to leave the cluster
+#
+--connection node_1
+--let $wait_condition = SELECT VARIABLE_VALUE = 1 FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_cluster_size'
+--source include/wait_condition.inc
+
+INSERT INTO t1 VALUES (2);
+
+#
+# Trigger an error while attempting to rejoin the cluster
+# Expect the node the give up on SST and shutdown.
+# If bug is present the node will teardown galera library
+# while in view handler. Resulting in a hang with warning
+# "Waiting for 2 items to be fetched"
+#
+--connection node_2
+SET GLOBAL DEBUG="d,simulate_sst_prepare_error";
+--disable_query_log
+--eval SET GLOBAL wsrep_cluster_address = '$wsrep_cluster_address_orig';
+--enable_query_log
+
+#
+# Restart node_2 and cleanup
+#
+--source include/start_mysqld.inc
+
+--let $wait_condition = SELECT VARIABLE_VALUE = 2 FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_cluster_size'
+--source include/wait_condition.inc
+
+DROP TABLE t1;
+
+
+CALL mtr.add_suppression("WSREP: SST preparation failed: 12 \\(Cannot allocate memory\\)");
+CALL mtr.add_suppression("WSREP: view callback failed");
+CALL mtr.add_suppression("down context\\(s\\) not set");

@@ -632,6 +632,10 @@ ssize_t wsrep_sst_prepare (void** msg, THD *thd)
   const char* addr_in=  NULL;
   const char* addr_out= NULL;
 
+  DBUG_EXECUTE_IF("simulate_sst_prepare_error", {
+      return -ENOMEM;
+    };);
+
   if (!strcmp(wsrep_sst_method, WSREP_SST_SKIP))
   {
     ssize_t ret = strlen(WSREP_STATE_TRANSFER_TRIVIAL) + 1;
@@ -639,7 +643,7 @@ ssize_t wsrep_sst_prepare (void** msg, THD *thd)
     if (!msg)
     {
       WSREP_ERROR("Could not allocate %zd bytes for state request", ret);
-      unireg_abort(1);
+      return -errno;
     }
     return ret;
   }
@@ -680,7 +684,7 @@ ssize_t wsrep_sst_prepare (void** msg, THD *thd)
                   "failed to guess address to accept state transfer at. "
                   "wsrep_sst_receive_address must be set manually.");
       if (thd) delete thd;
-      unireg_abort(1);
+      return -1;
     }
   }
 
@@ -715,7 +719,7 @@ ssize_t wsrep_sst_prepare (void** msg, THD *thd)
     {
       WSREP_ERROR("Failed to prepare for '%s' SST. Unrecoverable.",
                    wsrep_sst_method);
-      unireg_abort(1);
+      return addr_len;
     }
   }
 
@@ -734,7 +738,7 @@ ssize_t wsrep_sst_prepare (void** msg, THD *thd)
   else {
     WSREP_ERROR("Failed to allocate SST request of size %zu. Can't continue.",
                 msg_len);
-    unireg_abort(1);
+    return -errno;
   }
 
   if (addr_out != addr_in) /* malloc'ed */ free ((char*)addr_out);
