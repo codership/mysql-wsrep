@@ -1754,7 +1754,7 @@ wsrep-load-data-splitting TRUE
 wsrep-log-conflicts FALSE
 wsrep-max-ws-rows 0
 wsrep-max-ws-size 2147483647
-wsrep-mode 
+wsrep-mode APPLIER_IGNORE_MISSING_TABLE
 wsrep-mysql-replication-bundle 0
 wsrep-node-address 
 wsrep-node-incoming-address AUTO
