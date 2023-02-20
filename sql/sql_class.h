@@ -2240,6 +2240,8 @@ private:
   NET     net;                          // client connection descriptor
   String  packet;                       // dynamic buffer for network I/O
 public:
+  const NET *get_net() const { return &net; }
+
   void set_skip_readonly_check()
   {
     skip_readonly_check= true;
@@ -4588,8 +4590,10 @@ public:
     Reset thd->rewritten_query. Protected with the LOCK_thd_query mutex.
   */
   void reset_rewritten_query() {
-    String empty;
-    swap_rewritten_query(empty);
+    if (rewritten_query().length()) {
+      String empty;
+      swap_rewritten_query(empty);
+    }
   }
 
   /**
