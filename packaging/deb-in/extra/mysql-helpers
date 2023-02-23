@@ -80,7 +80,7 @@ get_recover_pos () {
     chown mysql.mysql $LOG
     /usr/sbin/mysqld --user=mysql --wsrep_recover --log-error=$LOG
 
-    local rp="$(grep 'WSREP: Recovered position:' $LOG | tail -n 1)"
+    local rp="$(grep -a 'WSREP: Recovered position:' $LOG | tail -n 1)"
     if [ -z "$rp" ]; then
          local skipped="$(grep WSREP $LOG | grep 'skipping position recovery')"
          if [ -z "$skipped" ]; then

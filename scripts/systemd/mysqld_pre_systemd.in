@@ -103,7 +103,7 @@ get_recover_pos () {
     @libexecdir@/mysqld ${instance:+--defaults-group-suffix=@$instance} \
                      --datadir="$datadir" --user=@MYSQLD_USER@ --wsrep_recover 2>> $log
 
-    local rp="$(grep 'WSREP: Recovered position:' $log | tail -n 1)"
+    local rp="$(grep -a 'WSREP: Recovered position:' $log | tail -n 1)"
     if [ -z "$rp" ]; then
          local skipped="$(grep WSREP $log | grep 'skipping position recovery')"
          if [ -z "$skipped" ]; then
