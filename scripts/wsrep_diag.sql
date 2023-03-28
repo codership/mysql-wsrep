@@ -25,17 +25,17 @@ SET SESSION wsrep_sync_wait=0;
 
 USE information_schema;
 
-\! echo 'Wsrep status variables'
+SELECT 'Wsrep status variables' AS '';
 SELECT * FROM GLOBAL_STATUS WHERE VARIABLE_NAME LIKE 'wsrep_%';
 
-\! echo 'Wsrep appliers and rollbacker thread status'
+SELECT 'Wsrep appliers and rollbacker thread status' AS '';
 SELECT * FROM PROCESSLIST WHERE USER = 'system user'\G
 
-\! echo 'Wsrep appliers active in InnoDB'
+SELECT 'Wsrep appliers active in InnoDB' AS '';
 SELECT * FROM PROCESSLIST AS pl JOIN INNODB_TRX AS it
   ON pl.ID = it.trx_mysql_thread_id WHERE pl.USER = 'system user'\G
 
-\! echo 'Wsrep appliers blocked by other transactions in InnoDB and all blocking transactions'
+SELECT 'Wsrep appliers blocked by other transactions in InnoDB and all blocking transactions' AS '';
 SELECT * FROM PROCESSLIST AS pl JOIN INNODB_TRX AS it
   ON pl.ID = it.trx_mysql_thread_id
   WHERE
@@ -46,29 +46,29 @@ SELECT * FROM PROCESSLIST AS pl JOIN INNODB_TRX AS it
     -- Blocking transactions
     (it.trx_id IN (SELECT blocking_trx_id FROM INNODB_LOCK_WAITS))\G
 
-\! echo 'InnoDB lock waits'
+SELECT 'InnoDB lock waits' AS '';
 SELECT * FROM INNODB_LOCK_WAITS\G
 
-\! echo 'InnoDB locks - requested but not yet acquired, or blocking another transaction'
+SELECT 'InnoDB locks - requested but not yet acquired, or blocking another transaction' AS '';
 SELECT * FROM INNODB_LOCKS\G
 
-\! echo 'All active InnoDB transactions'
+SELECT 'All active InnoDB transactions' AS '';
 SELECT * FROM INNODB_TRX\G
 
 USE performance_schema;
-\! echo 'Performance schema information'
+SELECT 'Performance schema information' AS '';
 
-\! echo 'Events_waits_current'
+SELECT 'Events_waits_current' AS '';
 SELECT * FROM events_waits_current\G
 
-\! echo 'Metadata locks'
+SELECT 'Metadata locks' AS '';
 SELECT * FROM metadata_locks\G
 
-\! echo 'RWlock instances'
+SELECT 'RWlock instances' AS '';
 SELECT * FROM rwlock_instances WHERE WRITE_LOCKED_BY_THREAD_ID IS NOT NULL OR
   READ_LOCKED_BY_COUNT > 0\G
 
-\! echo 'All processes'
+SELECT 'All processes' AS '';
 SHOW PROCESSLIST\G
 
 SET SESSION wsrep_sync_wait=DEFAULT;
