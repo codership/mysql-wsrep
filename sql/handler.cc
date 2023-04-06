@@ -8098,7 +8098,13 @@ int binlog_log_row(TABLE* table,
         thd->wsrep_exec_mode != REPL_RECV &&
         thd->wsrep_affected_rows > wsrep_max_ws_rows)
     {
-      trans_rollback_stmt(thd) || trans_rollback(thd);
+      /*
+        If we are inside stored function or trigger we should not commit or
+        rollback current statement transaction. See comment in ha_commit_trans()
+        call for more information.
+      */
+      if (!thd->in_sub_stmt)
+        trans_rollback_stmt(thd) || trans_rollback(thd);
       my_message(ER_ERROR_DURING_COMMIT, "wsrep_max_ws_rows exceeded", MYF(0));
       return ER_ERROR_DURING_COMMIT;
     }
