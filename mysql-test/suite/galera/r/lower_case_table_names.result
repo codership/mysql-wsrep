@@ -1,0 +1,55 @@
+SET GLOBAL wsrep_slave_threads = 2;
+CREATE TABLE LC_TABLE_NAME (pk INT PRIMARY KEY);
+CREATE TABLE lc_table_name (pk INT PRIMARY KEY);
+ERROR 42S01: Table 'lc_table_name' already exists
+INSERT INTO LC_TABLE_NAME VALUES(-1);
+SET SESSION wsrep_sync_wait = 0;
+#
+# Case 1: Check that two DMLs conflict when referencing table
+#         in different case
+#
+SET SESSION wsrep_sync_wait = 0;
+SET SESSION wsrep_retry_autocommit = 0;
+SET GLOBAL DEBUG = "+d,sync.wsrep_apply_cb";
+INSERT INTO LC_TABLE_NAME VALUES (0);
+SET DEBUG_SYNC = "now WAIT_FOR sync.wsrep_apply_cb_reached";
+INSERT INTO lc_table_name VALUES (0);
+ERROR 40001: Deadlock found when trying to get lock; try restarting transaction
+SET GLOBAL DEBUG = "-d,sync.wsrep_apply_cb";
+SET DEBUG_SYNC = "now SIGNAL signal.wsrep_apply_cb";
+SET SESSION wsrep_retry_autocommit = DEFAULT;
+SET SESSION wsrep_sync_wait = DEFAULT;
+SELECT COUNT(*) AS expect_2 FROM LC_TABLE_NAME;
+expect_2
+2
+SELECT COUNT(*) AS expect_2 FROM lc_table_name;
+expect_2
+2
+#
+# Case 2: Check that DML conflicts with a TOI operation when
+#         referencing table in different case
+#
+SET SESSION wsrep_sync_wait = 0;
+SET SESSION wsrep_retry_autocommit = 0;
+SET GLOBAL DEBUG = "+d,sync.wsrep_apply_cb";
+ALTER TABLE LC_TABLE_NAME DROP PRIMARY KEY;;
+SET DEBUG_SYNC = "now WAIT_FOR sync.wsrep_apply_cb_reached";
+INSERT INTO lc_table_name VALUES (1);
+ERROR 40001: Deadlock found when trying to get lock; try restarting transaction
+SET GLOBAL DEBUG = "-d,sync.wsrep_apply_cb";
+SET DEBUG_SYNC = "now SIGNAL signal.wsrep_apply_cb";
+SET SESSION wsrep_retry_autocommit = DEFAULT;
+SET SESSION wsrep_sync_wait = DEFAULT;
+SELECT COUNT(*) AS expect_2 FROM lc_table_name;
+expect_2
+2
+SELECT COUNT(*) AS expect_2 FROM lc_table_name;
+expect_2
+2
+DROP TABLE lc_table_name;
+SET GLOBAL wsrep_slave_threads = DEFAULT;
+CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=InnoDB;
+CALL mtr.add_suppression("Slave SQL: Error 'Table 'lc_table_name' already exists' on query");
+SELECT * FROM t1;
+f1
+DROP TABLE t1;

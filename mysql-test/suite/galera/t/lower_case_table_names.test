@@ -1,0 +1,77 @@
+#
+# This test checks that lower_case_table_names=1 correctly detects
+# certification conflicts when referencing the table while mixing case.
+#
+
+--source include/galera_cluster.inc
+--source include/have_innodb.inc
+--source include/have_debug_sync.inc
+--source suite/galera/include/galera_have_debug_sync.inc
+
+# We need two applier threads to avoid blocking on Galera internal
+# events
+--connection node_1
+SET GLOBAL wsrep_slave_threads = 2;
+
+# Prepare the table and make sure lower_case_table_names=1 is in effect
+CREATE TABLE LC_TABLE_NAME (pk INT PRIMARY KEY);
+--error 1050
+CREATE TABLE lc_table_name (pk INT PRIMARY KEY);
+INSERT INTO LC_TABLE_NAME VALUES(-1);
+
+# Make sure all actions were applied on node_2
+--connection node_2
+--let $wait_condition = SELECT COUNT(*) = 1 FROM lc_table_name;
+--source include/wait_condition.inc
+
+# Session on node 1 for controlling sync points
+--connect node_1_ctrl, 127.0.0.1, root, , test, $NODE_MYPORT_1
+SET SESSION wsrep_sync_wait = 0;
+
+--echo #
+--echo # Case 1: Check that two DMLs conflict when referencing table
+--echo #         in different case
+--echo #
+
+--connection node_1
+
+--let $certification_query_node_1 = INSERT INTO lc_table_name VALUES (0)
+--let $certification_query_node_2 = INSERT INTO LC_TABLE_NAME VALUES (0)
+--source suite/galera/include/certification_conflict.inc
+
+--connection node_1
+SELECT COUNT(*) AS expect_2 FROM LC_TABLE_NAME;
+
+--connection node_2
+SELECT COUNT(*) AS expect_2 FROM lc_table_name;
+
+--echo #
+--echo # Case 2: Check that DML conflicts with a TOI operation when
+--echo #         referencing table in different case
+--echo #
+
+# Query on node_2 is ordered first, so query on node_1 should fail certification
+--let $certification_query_node_1 = INSERT INTO lc_table_name VALUES (1)
+--let $certification_query_node_2 = ALTER TABLE LC_TABLE_NAME DROP PRIMARY KEY;
+--source suite/galera/include/certification_conflict.inc
+
+--connection node_1
+SELECT COUNT(*) AS expect_2 FROM lc_table_name;
+
+--connection node_2
+SELECT COUNT(*) AS expect_2 FROM lc_table_name;
+
+--connection node_1
+DROP TABLE lc_table_name;
+
+# Reset number of applier threads back to default and execute a
+# query to make the extra applier to exit before leaving the test.
+SET GLOBAL wsrep_slave_threads = DEFAULT;
+
+--connection node_2
+CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=InnoDB;
+CALL mtr.add_suppression("Slave SQL: Error 'Table 'lc_table_name' already exists' on query");
+
+--connection node_1
+SELECT * FROM t1;
+DROP TABLE t1;

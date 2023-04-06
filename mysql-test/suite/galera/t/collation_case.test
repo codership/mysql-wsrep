@@ -25,9 +25,9 @@ SET SESSION wsrep_sync_wait = 0;
 --connection node_1
 CREATE TABLE tcoll (string VARCHAR(16) CHARSET utf8 COLLATE utf8_bin PRIMARY KEY, node INTEGER) ENGINE=InnoDB;
 
---let $collation_query_node_1 = INSERT INTO tcoll VALUES ('abc', 1)
---let $collation_query_node_2 = INSERT INTO tcoll VALUES ('ABC', 2)
---source collation_non_conflicting.inc
+--let $certification_query_node_1 = INSERT INTO tcoll VALUES ('abc', 1)
+--let $certification_query_node_2 = INSERT INTO tcoll VALUES ('ABC', 2)
+--source suite/galera/include/certification_no_conflict.inc
 
 --connection node_1
 SELECT COUNT(*) AS expect_2 FROM tcoll;
@@ -45,9 +45,9 @@ DROP TABLE tcoll;
 --connection node_1
 CREATE TABLE tcoll (string VARCHAR(16) CHARSET utf8 COLLATE utf8_general_ci PRIMARY KEY, node INTEGER) ENGINE=InnoDB;
 
---let $collation_query_node_1 = INSERT INTO tcoll VALUES ('abc', 1)
---let $collation_query_node_2 = INSERT INTO tcoll VALUES ('ABC', 2)
---source collation_conflicting.inc
+--let $certification_query_node_1 = INSERT INTO tcoll VALUES ('abc', 1)
+--let $certification_query_node_2 = INSERT INTO tcoll VALUES ('ABC', 2)
+--source suite/galera/include/certification_conflict.inc
 
 --connection node_1
 SELECT COUNT(*) AS expect_1 FROM tcoll;
