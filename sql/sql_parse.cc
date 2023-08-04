@@ -1284,23 +1284,6 @@ static inline bool is_timer_applicable_to_statement(THD *thd)
 
 
 #ifdef WITH_WSREP
-static my_bool wsrep_read_only_option(THD *thd, TABLE_LIST *all_tables)
-{
-  int opt_readonly_saved = opt_readonly;
-  ulong flag_saved = (ulong)(thd->security_context()->master_access() & SUPER_ACL);
-
-  opt_readonly = 0;
-  ulong master_access= thd->security_context()->master_access();
-  thd->security_context()->set_master_access(master_access & ~SUPER_ACL);
-
-  my_bool ret = !deny_updates_if_read_only_option(thd, all_tables);
-
-  opt_readonly = opt_readonly_saved;
-  master_access= thd->security_context()->master_access();
-  thd->security_context()->set_master_access(master_access | flag_saved);
-
-  return ret;
-}
 
 static void wsrep_copy_query(THD *thd)
 {
@@ -7110,8 +7093,7 @@ static void wsrep_mysql_parse(THD *thd, const char *rawbuf, uint length,
   bool is_autocommit=
     !thd->in_multi_stmt_transaction_mode()                  &&
     thd->wsrep_conflict_state == NO_CONFLICT                &&
-    !thd->wsrep_applier                                     &&
-    wsrep_read_only_option(thd, thd->lex->query_tables);
+    !thd->wsrep_applier;
 
   do
   {
@@ -7144,7 +7126,8 @@ static void wsrep_mysql_parse(THD *thd, const char *rawbuf, uint length,
         thd->killed= THD::NOT_KILLED;
         if (is_autocommit                           &&
             thd->lex->sql_command != SQLCOM_SELECT  &&
-           (thd->wsrep_retry_counter < thd->variables.wsrep_retry_autocommit))
+           (thd->wsrep_retry_counter < thd->variables.wsrep_retry_autocommit) &&
+            !deny_updates_if_read_only_option(thd, thd->lex->query_tables))
         {
           WSREP_DEBUG("wsrep retrying AC query: %s", WSREP_QUERY(thd));
 

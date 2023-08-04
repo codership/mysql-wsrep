@@ -1,0 +1,10 @@
+CREATE TABLE t1 (id INT PRIMARY KEY AUTO_INCREMENT, f2 INT) ENGINE=InnoDB;
+CREATE USER 'test'@'%' IDENTIFIED BY 'testpass';
+GRANT ALL ON test.* TO 'test'@'%';
+SET GLOBAL read_only=ON;
+SELECT COUNT(*) AS `expect_0` FROM t1;
+expect_0
+0
+SET GLOBAL read_only=FALSE;
+DROP USER 'test'@'%';
+DROP TABLE t1;

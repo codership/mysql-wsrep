@@ -1,0 +1,53 @@
+#
+# Verify that read-only is not reset during concurrent load
+# codership/mysql-wsrep-bugs#1549
+#
+--source include/galera_cluster.inc
+--source include/big_test.inc
+
+--connection node_1
+CREATE TABLE t1 (id INT PRIMARY KEY AUTO_INCREMENT, f2 INT) ENGINE=InnoDB;
+# Create test user which is affected by read-only
+CREATE USER 'test'@'%' IDENTIFIED BY 'testpass';
+GRANT ALL ON test.* TO 'test'@'%';
+
+--connection node_2
+SET GLOBAL read_only=ON;
+
+--disable_query_log
+--disable_result_log
+--let $cnt = 0
+--connect node_2_test_1, 127.0.0.1, test, testpass, test, $NODE_MYPORT_2
+--connect node_2_test_2, 127.0.0.1, test, testpass, test, $NODE_MYPORT_2
+--connect node_2_test_3, 127.0.0.1, test, testpass, test, $NODE_MYPORT_2
+
+while ($cnt < 100000) {
+      --connection node_2_test_1
+      --send INSERT INTO t1 (f2) VALUES (1)
+      --connection node_2_test_2
+      --send INSERT INTO t1 (f2) VALUES (1)
+      --connection node_2_test_3
+      --send INSERT INTO t1 (f2) VALUES (1)
+
+      --connection node_2_test_1
+      --error ER_OPTION_PREVENTS_STATEMENT
+      --reap
+      --connection node_2_test_2
+      --error ER_OPTION_PREVENTS_STATEMENT
+      --reap
+      --connection node_2_test_3
+      --error ER_OPTION_PREVENTS_STATEMENT
+      --reap
+      --inc $cnt
+}
+--enable_result_log
+--enable_query_log
+
+--connection node_2
+SELECT COUNT(*) AS `expect_0` FROM t1;
+SET GLOBAL read_only=FALSE;
+
+--connection node_1
+DROP USER 'test'@'%';
+DROP TABLE t1;
+
