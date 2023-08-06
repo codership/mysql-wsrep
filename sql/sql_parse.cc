@@ -7126,8 +7126,7 @@ static void wsrep_mysql_parse(THD *thd, const char *rawbuf, uint length,
         thd->killed= THD::NOT_KILLED;
         if (is_autocommit                           &&
             thd->lex->sql_command != SQLCOM_SELECT  &&
-           (thd->wsrep_retry_counter < thd->variables.wsrep_retry_autocommit) &&
-            !deny_updates_if_read_only_option(thd, thd->lex->query_tables))
+           (thd->wsrep_retry_counter < thd->variables.wsrep_retry_autocommit))
         {
           WSREP_DEBUG("wsrep retrying AC query: %s", WSREP_QUERY(thd));
 
