@@ -2,12 +2,12 @@
 .\"     Title: mysqldump
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/14/2023
+.\"      Date: 06/20/2023
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.7
 .\"  Language: English
 .\"
-.TH "MYSQLDUMP" "1" "03/14/2023" "MySQL 5\&.7" "MySQL Database System"
+.TH "MYSQLDUMP" "1" "06/20/2023" "MySQL 5\&.7" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -2910,6 +2910,15 @@ does not dump
 InnoDB
 CREATE TABLESPACE
 statements\&.
+.PP
+\fBmysqldump\fR
+always strips the
+NO_AUTO_CREATE_USER
+SQL mode as
+NO_AUTO_CREATE_USER
+is not compatible with MySQL 8\&.0\&. It remains stripped even when importing back into MySQL 5\&.7, which means that stored routines could behave differently after restoring a dump if they rely upon this particular sql_mode\&. It is stripped as of
+\fBmysqldump\fR
+5\&.7\&.24\&.
 .PP
 It is not recommended to restore from a dump made using
 \fBmysqldump\fR
